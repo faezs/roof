@@ -3,7 +3,7 @@
 
   inputs = {
     vehicle = {
-      url = "git+file:///home/faezs/library/vehicle";
+      url = "github:faezs/vehicle";
     };
     flake-parts = {
       url = "github:hercules-ci/flake-parts";

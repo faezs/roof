@@ -3,7 +3,7 @@
 
   inputs = {
     vehicle = {
-      url = "github:faezs/vehicle";
+      url = "github:faezs/vehicle/nix";
     };
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
@@ -14,7 +14,7 @@
       inputs.nixpkgs.follows = "vehicle/nixpkgs";
     };
     artist = {
-      url = "github:faezs/ARTIST";
+      url = "github:faezs/ARTIST/nix-support";
       inputs.nixpkgs.follows = "vehicle/nixpkgs";
     };
     dream2nix.url = "github:nix-community/dream2nix";
@@ -123,7 +123,7 @@
             artistPackage.devShell  # Include ARTIST dev shell
           ];
           packages = [ 
-            vehicle.packages.${system}.vehicle
+            vehicle.packages.${system}.default
             soltrace
             pythonEnv
             haskellEnv

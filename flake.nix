@@ -13,11 +13,15 @@
       flake = true;
       inputs.nixpkgs.follows = "vehicle/nixpkgs";
     };
+    artist = {
+      url = "git+file:///home/faezs/library/ARTIST";
+      inputs.nixpkgs.follows = "vehicle/nixpkgs";
+    };
     dream2nix.url = "github:nix-community/dream2nix";
     dream2nix.inputs.nixpkgs.follows = "vehicle/nixpkgs";
   };
 
-  outputs = inputs@{ self, vehicle, flake-parts, roshni-solar-ui, dream2nix, ... }: 
+  outputs = inputs@{ self, vehicle, flake-parts, roshni-solar-ui, artist, dream2nix, ... }: 
     let nixpkgs = vehicle.inputs.nixpkgs; in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = nixpkgs.lib.systems.flakeExposed;
@@ -37,7 +41,10 @@
         # Get SolTrace from roshni
         soltrace = roshni-solar-ui.packages.${system}.soltrace;
         
-        # Python environment with ARTIST dependencies
+        # Get ARTIST package
+        artistPackage = artist.packages.${system}.default;
+        
+        # Python environment with ARTIST and dependencies
         pythonEnv = pkgs.python3.withPackages (ps: with ps; [
           numpy
           scipy
@@ -46,6 +53,16 @@
           ipython
           torch
           torchvision
+          h5py              # For HDF5 file handling (ARTIST scenarios)
+          opencv4           # For computer vision/image processing
+          pillow            # For image I/O
+          scikit-image      # For image analysis
+          scikit-learn      # For machine learning utilities
+          tqdm              # For progress bars
+          pyyaml            # For YAML configuration files
+          requests          # For web requests
+          typing-extensions # For enhanced typing support
+          colorlog          # ARTIST dependency
         ]);
 
         # Haskell environment with SBV for verified control
@@ -101,24 +118,29 @@
         # Development shell with all tools
         devShells.default = pkgs.mkShell {
           name = "heliostat-dev";
-          inputsFrom = [ vehicle.packages.${system}.default ];
+          inputsFrom = [ 
+            vehicle.packages.${system}.default
+            artistPackage.devShell  # Include ARTIST dev shell
+          ];
           packages = [ 
             vehicle.packages.${system}.vehicle
             soltrace
             pythonEnv
             haskellEnv
+            artistPackage  # ARTIST package
             pkgs.uv
             pkgs.z3  # SMT solver for SBV
             pkgs.cvc4  # Alternative SMT solver
           ];
           
           shellHook = ''
-            export PYTHONPATH=$PYTHONPATH:${soltrace}/lib
+            export PYTHONPATH=$PYTHONPATH:${soltrace}/lib:${artistPackage}/${artistPackage.config.deps.python.sitePackages}
             export PATH=$PATH:${soltrace}/bin
             
             echo "Heliostat development environment ready"
             echo "SolTrace binary available at: ${soltrace}/bin/SolTrace"
             echo "Python API available (import pysoltrace)"
+            echo "ARTIST package available (import artist)"
           '';
         };
         
@@ -131,6 +153,7 @@
           buildInputs = [
             soltrace
             pythonEnv
+            artistPackage
             vehicle.packages.${system}.vehicle
           ];
           

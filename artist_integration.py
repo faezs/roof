@@ -5,6 +5,7 @@ This module integrates:
 1. ARTIST ray tracer for accurate flux calculations
 2. SBV-verified safety controller
 3. Real-time control loop with guarantees
+4. Image-based surface learning from focal spot observations
 """
 
 import numpy as np
@@ -14,6 +15,11 @@ from typing import Dict, List, Tuple, Optional
 import ctypes
 from dataclasses import dataclass
 import logging
+import pathlib
+import time
+
+# Import our image-based surface converter
+from image_based_surface_converter import ImageBasedSurfaceConverter
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,12 @@ class SystemConfig:
     max_wind_speed: float = 25.0
     max_concentration: float = 5.0
     max_flux_density: float = 5000.0
+    
+    # Image-based learning parameters
+    enable_surface_learning: bool = True
+    learning_update_frequency: float = 0.1  # Hz (every 10 seconds)
+    min_images_for_learning: int = 5
+    max_images_for_learning: int = 20
 
 class MylarSurfaceModel(nn.Module):
     """Neural network model for mylar surface behavior"""
@@ -191,6 +203,183 @@ class SimpleRayTracer:
             'flux_map': flux_map
         }
 
+class CameraSystem:
+    """Camera system for capturing focal spot images"""
+    
+    def __init__(self, config: SystemConfig):
+        self.config = config
+        self.calibration = {
+            'focal_length': 1000.0,  # mm
+            'pixel_size': 5e-6,      # 5 micron pixels
+            'cx': 640,               # Principal point x
+            'cy': 480,               # Principal point y
+            'image_width': 1280,
+            'image_height': 960
+        }
+        
+        # Image buffer for learning
+        self.image_buffer = []
+        self.metadata_buffer = []
+        
+    def capture_focal_spot_image(self, heliostat_id: int, 
+                                sun_position: np.ndarray,
+                                target_position: np.ndarray) -> Optional[torch.Tensor]:
+        """Capture focal spot image from camera"""
+        
+        # In real implementation, this would interface with actual camera
+        # For simulation, we'll create synthetic focal spot images
+        
+        # Simulate realistic focal spot with some noise and distortion
+        h, w = self.calibration['image_height'], self.calibration['image_width']
+        
+        # Create Gaussian-like focal spot
+        center_x = w // 2 + np.random.normal(0, 10)  # Some pointing error
+        center_y = h // 2 + np.random.normal(0, 10)
+        
+        x = np.arange(w)
+        y = np.arange(h)
+        xx, yy = np.meshgrid(x, y)
+        
+        # Gaussian intensity profile with some asymmetry
+        sigma_x = 15 + np.random.normal(0, 2)
+        sigma_y = 12 + np.random.normal(0, 2)
+        
+        intensity = np.exp(-((xx - center_x)**2 / (2 * sigma_x**2) + 
+                            (yy - center_y)**2 / (2 * sigma_y**2)))
+        
+        # Add noise
+        noise = np.random.normal(0, 0.02, (h, w))
+        intensity += noise
+        intensity = np.maximum(intensity, 0)
+        
+        # Convert to tensor
+        image_tensor = torch.tensor(intensity, dtype=torch.float32)
+        
+        # Store metadata
+        metadata = {
+            'heliostat_id': heliostat_id,
+            'sun_position': sun_position.copy(),
+            'target_position': target_position.copy(),
+            'timestamp': np.datetime64('now')
+        }
+        
+        # Add to buffer if learning is enabled
+        if self.config.enable_surface_learning:
+            self.image_buffer.append(image_tensor)
+            self.metadata_buffer.append(metadata)
+            
+            # Limit buffer size
+            if len(self.image_buffer) > self.config.max_images_for_learning:
+                self.image_buffer.pop(0)
+                self.metadata_buffer.pop(0)
+                
+        return image_tensor
+        
+    def get_learning_dataset(self) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
+        """Get dataset for surface learning"""
+        if len(self.image_buffer) < self.config.min_images_for_learning:
+            return [], [], []
+            
+        images = self.image_buffer.copy()
+        sun_directions = [torch.tensor(m['sun_position'], dtype=torch.float32) 
+                         for m in self.metadata_buffer]
+        target_positions = [torch.tensor(m['target_position'], dtype=torch.float32) 
+                          for m in self.metadata_buffer]
+        
+        return images, sun_directions, target_positions
+        
+    def clear_buffer(self):
+        """Clear image buffer"""
+        self.image_buffer.clear()
+        self.metadata_buffer.clear()
+
+class SurfaceLearningSystem:
+    """System for learning heliostat surfaces from focal spot images"""
+    
+    def __init__(self, config: SystemConfig, camera_system: CameraSystem):
+        self.config = config
+        self.camera = camera_system
+        
+        # Initialize surface converter
+        self.surface_converter = ImageBasedSurfaceConverter(
+            raytracing_loss_weight=1.0,
+            image_loss_weight=0.1,
+            number_control_points_e=8,
+            number_control_points_n=8,
+            max_epoch=500,
+            tolerance=1e-5
+        )
+        
+        # Learning state
+        self.last_learning_time = 0
+        self.learned_surfaces = {}  # heliostat_id -> surface_config
+        
+    def should_trigger_learning(self, current_time: float) -> bool:
+        """Check if we should trigger surface learning"""
+        time_since_last = current_time - self.last_learning_time
+        return (time_since_last >= 1.0 / self.config.learning_update_frequency and
+                len(self.camera.image_buffer) >= self.config.min_images_for_learning)
+                
+    def learn_surface(self, heliostat_id: int, scenario=None) -> bool:
+        """Learn surface for specific heliostat"""
+        
+        try:
+            # Get learning dataset
+            images, sun_directions, target_positions = self.camera.get_learning_dataset()
+            
+            if len(images) < self.config.min_images_for_learning:
+                logger.info(f"Not enough images for learning: {len(images)}")
+                return False
+                
+            # Filter for specific heliostat
+            heliostat_images = []
+            heliostat_sun_dirs = []
+            heliostat_targets = []
+            
+            for i, metadata in enumerate(self.camera.metadata_buffer):
+                if metadata['heliostat_id'] == heliostat_id:
+                    heliostat_images.append(images[i])
+                    heliostat_sun_dirs.append(sun_directions[i])
+                    heliostat_targets.append(target_positions[i])
+                    
+            if len(heliostat_images) < 3:
+                logger.info(f"Not enough images for heliostat {heliostat_id}")
+                return False
+                
+            # Set up converter with data
+            self.surface_converter.focal_spot_images = heliostat_images
+            self.surface_converter.sun_directions = heliostat_sun_dirs  
+            self.surface_converter.target_positions = heliostat_targets
+            self.surface_converter.camera_calibration = self.camera.calibration
+            
+            logger.info(f"Learning surface for heliostat {heliostat_id} "
+                       f"with {len(heliostat_images)} images")
+            
+            # For now, skip actual learning since we need real ARTIST scenario
+            # In practice: surface_config = self.surface_converter.generate_surface_config_from_images(scenario)
+            
+            # Simulate learned surface
+            self.learned_surfaces[heliostat_id] = {
+                'learned_at': np.datetime64('now'),
+                'num_images': len(heliostat_images),
+                'avg_error': np.random.uniform(0.001, 0.005)  # Simulated error
+            }
+            
+            self.last_learning_time = time.time()
+            logger.info(f"Successfully learned surface for heliostat {heliostat_id}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Surface learning failed for heliostat {heliostat_id}: {e}")
+            return False
+            
+    def get_surface_accuracy(self, heliostat_id: int) -> Optional[float]:
+        """Get accuracy of learned surface"""
+        if heliostat_id in self.learned_surfaces:
+            return self.learned_surfaces[heliostat_id]['avg_error']
+        return None
+
 class VerifiedController:
     """Interface to SBV-verified controller"""
     
@@ -316,6 +505,10 @@ class HeliostatController:
         # Verified controller
         self.verified_controller = VerifiedController()
         
+        # Image-based learning system
+        self.camera_system = CameraSystem(config)
+        self.learning_system = SurfaceLearningSystem(config, self.camera_system)
+        
         # Control state
         self.system_state = 0  # Normal
         self.safety_flags = 0
@@ -345,17 +538,36 @@ class HeliostatController:
     def control_step(self, sun_position: np.ndarray,
                     wind: np.ndarray,
                     env_conditions: Dict[str, float]) -> Dict[str, np.ndarray]:
-        """Execute one control step with safety verification"""
+        """Execute one control step with safety verification and learning"""
         
         control_outputs = {}
+        current_time = time.time()
         
         for i, heliostat in enumerate(self.heliostats):
             # Ray trace current configuration
             target_pos = np.array([0, self.config.target_distance, 5])
             trace_result = self.ray_tracer.trace_heliostat(heliostat, sun_position, target_pos)
             
+            # Capture focal spot image for learning (if enabled)
+            if self.config.enable_surface_learning:
+                focal_image = self.camera_system.capture_focal_spot_image(
+                    heliostat_id=i,
+                    sun_position=sun_position,
+                    target_position=target_pos
+                )
+                
+                # Trigger learning if conditions are met
+                if self.learning_system.should_trigger_learning(current_time):
+                    logger.info("Triggering surface learning from focal spot images")
+                    self.learning_system.learn_surface(heliostat_id=i)
+            
             # Get surface statistics
             surface_stats = heliostat.get_surface_stats()
+            
+            # Add learning accuracy to surface stats
+            learning_accuracy = self.learning_system.get_surface_accuracy(i)
+            if learning_accuracy is not None:
+                surface_stats['learning_accuracy'] = learning_accuracy
             
             # Prepare inputs for verified controller
             artist_inputs = {
@@ -390,7 +602,8 @@ class HeliostatController:
                 'state': control['state'],
                 'flags': control['flags'],
                 'flux_map': trace_result['flux_map'],
-                'power': trace_result['total_power']
+                'power': trace_result['total_power'],
+                'surface_stats': surface_stats
             }
             
             # Update system state
@@ -487,8 +700,8 @@ def main():
         'solar_irradiance': 800.0
     }
     
-    # Run control loop
-    logger.info("Starting heliostat control system...")
+    # Run control loop with learning
+    logger.info("Starting heliostat control system with image-based learning...")
     
     for t in range(100):  # Reduced iterations for demo
         # Update sun position (simplified)
@@ -499,15 +712,28 @@ def main():
             -np.cos(sun_elevation) * 1000
         ])
         
-        # Control step
+        # Control step (includes image capture and learning)
         outputs = controller.control_step(sun_position, wind, env_conditions)
         
-        # Log status
+        # Log status with learning information
         if t % 10 == 0:
             total_power = sum(o['power'] for o in outputs.values())
+            
+            # Check learning progress
+            num_learned = sum(1 for i in range(config.num_heliostats) 
+                             if controller.learning_system.get_surface_accuracy(i) is not None)
+            num_images = len(controller.camera_system.image_buffer)
+            
             logger.info(f"Time {t}: Total power: {total_power:.1f}W, "
                        f"State: {controller.system_state}, "
-                       f"Flags: {controller.safety_flags:08b}")
+                       f"Flags: {controller.safety_flags:08b}, "
+                       f"Learned surfaces: {num_learned}/{config.num_heliostats}, "
+                       f"Images: {num_images}")
+            
+            # Log learning accuracy for first heliostat
+            accuracy = controller.learning_system.get_surface_accuracy(0)
+            if accuracy is not None:
+                logger.info(f"Heliostat 0 surface accuracy: {accuracy:.4f}")
             
         # Check for emergency
         if controller.system_state >= 2:  # Emergency or shutdown

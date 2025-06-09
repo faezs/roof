@@ -9,11 +9,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1749469579,
-        "narHash": "sha256-bZ2NgItJgMei9fyy1aNzqjKQLyu7i7y7XuJLZP66eo4=",
+        "lastModified": 1749471319,
+        "narHash": "sha256-JXKZ+F8XlwLMD352R73YrkdkBUEHJMD9dRHPlq0eCaY=",
         "owner": "faezs",
         "repo": "ARTIST",
-        "rev": "da716c2b1734525e48fee0065b92cd50ed970a99",
+        "rev": "96aeea12bf9930df8043427ab398f595dfa23324",
         "type": "github"
       },
       "original": {

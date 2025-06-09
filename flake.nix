@@ -35,11 +35,17 @@
             allowBroken = true;
             allowUnfree = true;
           };
-          overlays = [ vehicle.overlays.default ];
+          overlays = [ 
+            vehicle.overlays.default
+            # Disable CVC4 on macOS due to build failures
+            (final: prev: lib.optionalAttrs prev.stdenv.isDarwin {
+              cvc4 = prev.hello;  # Replace with a dummy package that builds
+            })
+          ];
         };
 
-        # Get SolTrace from roshni
-        soltrace = roshni-solar-ui.packages.${system}.soltrace;
+        # Get SolTrace from roshni (disabled on macOS)
+        soltrace = lib.optionalAttrs (!pkgs.stdenv.isDarwin) roshni-solar-ui.packages.${system}.soltrace;
         
         # Get ARTIST package
         artistPackage = artist.packages.${system}.default;
@@ -71,6 +77,9 @@
             sbv = prev.sbv.overrideAttrs (oldAttrs: {
               # Ensure SBV builds correctly
               doCheck = false;
+              # Disable CVC4 support on macOS
+              configureFlags = (oldAttrs.configureFlags or []) ++ 
+                lib.optionals pkgs.stdenv.isDarwin [ "--flag=-cvc4" ];
             });
           };
         };
@@ -124,22 +133,28 @@
           ];
           packages = [ 
             vehicle.packages.${system}.default
-            soltrace
             pythonEnv
             haskellEnv
             artistPackage  # ARTIST package
             pkgs.uv
             pkgs.z3  # SMT solver for SBV
+          ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ 
+            soltrace
             pkgs.cvc4  # Alternative SMT solver
           ];
           
           shellHook = ''
-            export PYTHONPATH=$PYTHONPATH:${soltrace}/lib:${artistPackage}/${artistPackage.config.deps.python.sitePackages}
-            export PATH=$PATH:${soltrace}/bin
+            export PYTHONPATH=$PYTHONPATH:${artistPackage}/${artistPackage.config.deps.python.sitePackages}
+            ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
+              export PYTHONPATH=$PYTHONPATH:${soltrace}/lib
+              export PATH=$PATH:${soltrace}/bin
+            ''}
             
             echo "Heliostat development environment ready"
-            echo "SolTrace binary available at: ${soltrace}/bin/SolTrace"
-            echo "Python API available (import pysoltrace)"
+            ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
+              echo "SolTrace binary available at: ${soltrace}/bin/SolTrace"
+              echo "Python API available (import pysoltrace)"
+            ''}
             echo "ARTIST package available (import artist)"
           '';
         };
@@ -151,11 +166,10 @@
           src = ./.;
           
           buildInputs = [
-            soltrace
             pythonEnv
             artistPackage
             vehicle.packages.${system}.vehicle
-          ];
+          ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ soltrace.soltrace ];
           
           installPhase = ''
             mkdir -p $out/bin $out/lib $out/share
@@ -211,17 +225,20 @@
             EOF
             chmod +x $out/bin/heliostat-sim
             
-            # Add SolTrace wrapper
-            cat > $out/bin/run-soltrace <<EOF
-            #!/bin/sh
-            exec ${soltrace}/bin/SolTrace "\$@"
-            EOF
-            chmod +x $out/bin/run-soltrace
+            ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
+              # Add SolTrace wrapper
+              cat > $out/bin/run-soltrace <<EOF
+              #!/bin/sh
+              exec ${soltrace}/bin/SolTrace "\$@"
+              EOF
+              chmod +x $out/bin/run-soltrace
+            ''}
           '';
         };
         
-        # Integration test for SolTrace
-        checks.soltrace-test = pkgs.runCommand "soltrace-integration-test" {
+        # Integration test for SolTrace (disabled on macOS)
+        checks = lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
+          soltrace-test = pkgs.runCommand "soltrace-integration-test" {
           nativeBuildInputs = [ 
             pythonEnv
             soltrace
@@ -322,6 +339,7 @@
           # Create a success marker file
           echo "SolTrace integration test passed" > $out/result
         '';
+        };
       };
     };
 }

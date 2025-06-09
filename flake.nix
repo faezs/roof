@@ -9,12 +9,12 @@
       url = "github:hercules-ci/flake-parts";
     };
     roshni-solar-ui = {
-      url = "git+file:///home/faezs/roshni/solar-ui";
+      url = "github:faezs/nrel";
       flake = true;
       inputs.nixpkgs.follows = "vehicle/nixpkgs";
     };
     artist = {
-      url = "git+file:///home/faezs/library/ARTIST";
+      url = "github:faezs/ARTIST";
       inputs.nixpkgs.follows = "vehicle/nixpkgs";
     };
     dream2nix.url = "github:nix-community/dream2nix";

@@ -29,7 +29,7 @@ from artist.util.configuration_classes import FacetConfig
 from artist.util.nurbs import NURBSSurface
 from artist.util import utils
 from artist.raytracing.heliostat_tracing import HeliostatRayTracer
-from artist.scenario import Scenario
+from artist.util.scenario import Scenario
 
 log = logging.getLogger(__name__)
 """A logger for the image-based surface converter."""

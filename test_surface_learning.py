@@ -33,28 +33,36 @@ def patched_find_span(degree, evaluation_points, knot_vector, control_points, de
 artist.util.nurbs.NURBSSurface.find_span = patched_find_span
 
 # ARTIST imports
-from artist.field.heliostat import Heliostat
 from artist.field.surface import Surface
 from artist.raytracing.heliostat_tracing import HeliostatRayTracer
-from artist.scenario import Scenario
-from artist.scene.sun import Sun
+from artist.util.scenario import Scenario
+from artist.util.scenario_generator import ScenarioGenerator
 from artist.util.configuration_classes import (
+    ActuatorConfig,
+    ActuatorListConfig,
+    ActuatorPrototypeConfig,
     FacetConfig,
     HeliostatConfig,
     HeliostatListConfig,
+    KinematicConfig,
+    KinematicPrototypeConfig,
     LightSourceConfig,
     LightSourceListConfig,
     PowerPlantConfig,
+    PrototypeConfig,
+    SurfaceConfig,
+    SurfacePrototypeConfig,
     TargetAreaConfig,
     TargetAreaListConfig,
 )
 from artist.util.nurbs import NURBSSurface
+from artist.util import config_dictionary
 
 # Local imports
 from image_based_surface_converter import ImageBasedSurfaceConverter
 
 # Set up logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -69,26 +77,29 @@ class DistortedMirrorGenerator:
                                      distortion_magnitude: float = 0.01) -> NURBSSurface:
         """Create a NURBS surface with known distortions"""
         
-        # Create evaluation points
+        # Create evaluation points (avoid exactly 0 and 1)
         num_eval_e, num_eval_n = 20, 20
-        eval_points_e = torch.linspace(0, 1, num_eval_e, device=self.device)
-        eval_points_n = torch.linspace(0, 1, num_eval_n, device=self.device)
+        eval_points_e = torch.linspace(1e-5, 1 - 1e-5, num_eval_e, device=self.device)
+        eval_points_n = torch.linspace(1e-5, 1 - 1e-5, num_eval_n, device=self.device)
         
-        # Create control points grid (8x8 for reasonable complexity)
-        num_ctrl_e, num_ctrl_n = 8, 8
-        degree_e, degree_n = 3, 3
+        # Create control points grid (6x6 for simpler setup, degree 2)
+        num_ctrl_e, num_ctrl_n = 6, 6
+        degree_e, degree_n = 2, 2
         
-        # Initialize flat control points
-        ctrl_e = torch.linspace(-1.0, 1.0, num_ctrl_e, device=self.device)
-        ctrl_n = torch.linspace(-1.0, 1.0, num_ctrl_n, device=self.device)
-        ctrl_ee, ctrl_nn = torch.meshgrid(ctrl_e, ctrl_n, indexing='ij')
+        # Initialize control points using ARTIST test pattern
+        control_points_shape = (num_ctrl_e, num_ctrl_n)
+        ctrl_e_range = torch.linspace(-1.0, 1.0, num_ctrl_e, device=self.device)
+        ctrl_n_range = torch.linspace(-1.0, 1.0, num_ctrl_n, device=self.device)
         
-        # Start with flat surface (z=0, w=1 for homogeneous coordinates)
-        control_points = torch.zeros(num_ctrl_e, num_ctrl_n, 4, device=self.device)
-        control_points[:, :, 0] = ctrl_ee  # East
-        control_points[:, :, 1] = ctrl_nn  # North 
-        control_points[:, :, 2] = 0.0      # Up (flat initially)
-        control_points[:, :, 3] = 1.0      # Weight
+        # Use cartesian product like in ARTIST test
+        ctrl_grid = torch.cartesian_prod(ctrl_e_range, ctrl_n_range)
+        ctrl_with_z = torch.hstack((
+            ctrl_grid,
+            torch.zeros((len(ctrl_grid), 1), device=self.device)  # Flat Z initially
+        ))
+        
+        # Reshape to proper grid format
+        control_points = ctrl_with_z.reshape(control_points_shape + (3,))
         
         # Apply distortions
         if distortion_type == "gaussian_bump":
@@ -137,8 +148,8 @@ class DistortedMirrorGenerator:
         target_config = TargetAreaConfig(
             target_area_key="receiver",
             geometry="planar",
-            center=torch.tensor([0.0, 50.0, 10.0], device=self.device),
-            normal_vector=torch.tensor([0.0, -1.0, 0.0], device=self.device),
+            center=torch.tensor([0.0, 50.0, 10.0, 1.0], device=self.device),  # Homogeneous coordinates
+            normal_vector=torch.tensor([0.0, -1.0, 0.0, 0.0], device=self.device),  # Homogeneous coordinates
             plane_e=1.0,
             plane_u=1.0,
         )
@@ -155,7 +166,7 @@ class DistortedMirrorGenerator:
         light_source_config = LightSourceConfig(
             light_source_key="sun",
             light_source_type="sun",
-            number_of_rays=10000,
+            number_of_rays=1000,  # Reduced for testing
             distribution_type="normal",
             mean=0.0,
             covariance=4.3681e-06,  # Standard solar disk size
@@ -169,34 +180,104 @@ class DistortedMirrorGenerator:
         logger.debug("Light source list config created")
         
         # Create facet config from NURBS surface
-        logger.debug("About to calculate surface points and normals...")
-        surface_points, surface_normals = nurbs_surface.calculate_surface_points_and_normals()
-        logger.debug("Surface points and normals calculated successfully")
-        
         logger.debug("Creating facet config...")
+        
+        # Check the actual control points dimensions
+        logger.debug(f"Control points shape: {nurbs_surface.control_points.shape}")
+        
+        # Test what surface points look like
+        try:
+            test_surface_points, test_surface_normals = nurbs_surface.calculate_surface_points_and_normals()
+            logger.debug(f"Surface points shape: {test_surface_points.shape}")
+            logger.debug(f"Surface normals shape: {test_surface_normals.shape}")
+        except Exception as e:
+            logger.debug(f"Error calculating surface points: {e}")
+        
+        # Keep original 3D structure but detach gradients
+        control_points_detached = nurbs_surface.control_points.detach()
+        
         facet_config = FacetConfig(
             facet_key="test_facet",
-            facet_name="Test Facet",
-            surface_points=surface_points,
-            surface_normals=surface_normals,
-            surface_type="nurbs",
-            nurbs_surface=nurbs_surface,
-            width=2.0,
-            height=2.0,
+            control_points=control_points_detached,  # Keep 3D structure
+            degree_e=nurbs_surface.degree_e,
+            degree_n=nurbs_surface.degree_n,
+            number_eval_points_e=len(nurbs_surface.evaluation_points_e),
+            number_eval_points_n=len(nurbs_surface.evaluation_points_n),
+            translation_vector=torch.zeros(4, device=self.device),  # 4D for [x,y,z,w]
+            canting_e=torch.tensor([1, 0, 0, 0], dtype=torch.float32, device=self.device),  # 4D
+            canting_n=torch.tensor([0, 1, 0, 0], dtype=torch.float32, device=self.device),  # 4D
         )
         logger.debug("Facet config created")
+        
+        # Create prototype configurations
+        logger.debug("Creating prototype configurations...")
+        
+        # Surface prototype
+        surface_prototype_config = SurfacePrototypeConfig(facet_list=[facet_config])
+        
+        # Kinematic prototype
+        kinematic_prototype_config = KinematicPrototypeConfig(
+            type=config_dictionary.rigid_body_key,
+            initial_orientation=[0.0, 0.0, 1.0, 0.0],
+        )
+        
+        # Actuator prototypes
+        actuator1_prototype = ActuatorConfig(
+            key="actuator_1",
+            type=config_dictionary.ideal_actuator_key,
+            clockwise_axis_movement=False,
+        )
+        actuator2_prototype = ActuatorConfig(
+            key="actuator_2", 
+            type=config_dictionary.ideal_actuator_key,
+            clockwise_axis_movement=True,
+        )
+        actuator_prototype_config = ActuatorPrototypeConfig(
+            actuator_list=[actuator1_prototype, actuator2_prototype]
+        )
+        
+        # Combined prototype config
+        prototype_config = PrototypeConfig(
+            surface_prototype=surface_prototype_config,
+            kinematic_prototype=kinematic_prototype_config,
+            actuators_prototype=actuator_prototype_config,
+        )
+        logger.debug("Prototype configurations created")
+        
+        # Create surface config for heliostat
+        surface_config = SurfaceConfig(facet_list=[facet_config])
+        
+        # Create kinematic config for heliostat
+        kinematic_config = KinematicConfig(
+            type=config_dictionary.rigid_body_key,
+            initial_orientation=[0.0, 0.0, 1.0, 0.0],
+        )
+        
+        # Create actuator configs for heliostat
+        actuator1_heliostat = ActuatorConfig(
+            key="actuator_1",
+            type=config_dictionary.ideal_actuator_key,
+            clockwise_axis_movement=False,
+        )
+        actuator2_heliostat = ActuatorConfig(
+            key="actuator_2",
+            type=config_dictionary.ideal_actuator_key,
+            clockwise_axis_movement=True,
+        )
+        actuator_list_config = ActuatorListConfig(
+            actuator_list=[actuator1_heliostat, actuator2_heliostat]
+        )
         
         # Create heliostat config
         logger.debug("Creating heliostat config...")
         heliostat_config = HeliostatConfig(
-            heliostat_key="test_heliostat",
-            heliostat_name="Test Heliostat",
-            heliostat_id="H001",
-            position=torch.tensor([0.0, 0.0, 0.0], device=self.device),
-            aim_point=torch.tensor([0.0, 50.0, 10.0], device=self.device),
-            surface_config=[facet_config],
-            kinematic_type="rigid_body",
-            actuator_type="ideal",
+            name="test_heliostat",
+            id=1,
+            position=torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device),  # Homogeneous coordinates
+            aim_point=torch.tensor([0.0, 50.0, 10.0, 1.0], device=self.device),  # Homogeneous coordinates
+            surface=surface_config,
+            kinematic=kinematic_config,
+            actuators=actuator_list_config,
         )
         logger.debug("Heliostat config created")
         
@@ -209,22 +290,43 @@ class DistortedMirrorGenerator:
         # Create power plant config
         logger.debug("Creating power plant config...")
         power_plant_config = PowerPlantConfig(
-            power_plant_position=torch.tensor([0.0, 0.0, 0.0], device=self.device),
-            power_plant_name="Test Plant",
+            power_plant_position=torch.tensor([0.0, 0.0, 0.0], device=self.device),  # This might be lat/lon/alt, keep as 3D
         )
         logger.debug("Power plant config created")
         
-        # Create scenario
-        logger.debug("Creating final scenario object...")
-        scenario = Scenario(
+        # Generate scenario using ScenarioGenerator
+        logger.debug("Creating scenario generator...")
+        import tempfile
+        import pathlib
+        
+        # Create temporary file for scenario
+        temp_dir = pathlib.Path("/tmp")
+        scenario_file = temp_dir / "test_scenario"
+        
+        scenario_generator = ScenarioGenerator(
+            file_path=scenario_file,
             power_plant_config=power_plant_config,
             target_area_list_config=target_list_config,
             light_source_list_config=light_source_list_config,
             heliostat_list_config=heliostat_list_config,
-            device=self.device,
+            prototype_config=prototype_config,
         )
-        logger.debug("Scenario object created successfully")
         
+        logger.debug("Generating scenario HDF5 file...")
+        scenario_generator.generate_scenario()
+        
+        # Load scenario from generated HDF5 file
+        logger.debug("Loading scenario from HDF5...")
+        import h5py
+        scenario_h5_path = temp_dir / (scenario_file.name + ".h5")
+        
+        with h5py.File(scenario_h5_path) as scenario_file_h5:
+            scenario = Scenario.load_scenario_from_hdf5(
+                scenario_file=scenario_file_h5, 
+                device=self.device
+            )
+        
+        logger.debug("Scenario loaded successfully")
         return scenario
 
 
@@ -240,21 +342,41 @@ class FocalSpotGenerator:
                            add_noise: bool = True) -> List[torch.Tensor]:
         """Generate focal spot images for multiple sun directions"""
         
-        raytracer = HeliostatRayTracer(scenario=scenario, batch_size=1000)
+        raytracer = HeliostatRayTracer(
+            scenario=scenario,
+            heliostat_group=scenario.heliostat_field.heliostat_groups[0],
+            batch_size=1000
+        )
         focal_spots = []
         
         for sun_dir in sun_directions:
             logger.info(f"Generating focal spot for sun direction: {sun_dir.cpu().numpy()}")
             
-            # Align heliostat and trace rays
-            heliostat = scenario.heliostats.heliostat_list[0]
-            heliostat.set_aligned_surface_with_incident_ray_direction(
-                incident_ray_direction=sun_dir, device=self.device
+            # Align heliostat and trace rays using new structure
+            heliostat_group = scenario.heliostat_field.heliostat_groups[0]
+            
+            # Activate the first heliostat
+            active_heliostats_mask = torch.tensor([1], dtype=torch.int32, device=self.device)
+            heliostat_group.activate_heliostats(active_heliostats_mask=active_heliostats_mask)
+            
+            # Align heliostat with sun direction
+            target_area_mask = torch.tensor([0], device=self.device)  # First target area
+            heliostat_group.align_surfaces_with_incident_ray_directions(
+                aim_points=scenario.target_areas.centers[target_area_mask],
+                incident_ray_directions=sun_dir.unsqueeze(0),  # Add batch dimension
+                active_heliostats_mask=active_heliostats_mask,
+                device=self.device,
             )
             
             # Generate focal spot bitmap
-            bitmap = raytracer.trace_rays(incident_ray_direction=sun_dir, device=self.device)
-            bitmap = raytracer.normalize_bitmap(bitmap)
+            bitmap = raytracer.trace_rays(
+                incident_ray_directions=sun_dir.unsqueeze(0),  # Add batch dimension
+                active_heliostats_mask=active_heliostats_mask,
+                target_area_mask=target_area_mask,
+                device=self.device,
+            )
+            # The bitmap is already normalized by the raytracer
+            bitmap = bitmap[0]  # Remove batch dimension
             
             # Add realistic noise if requested
             if add_noise:
@@ -336,24 +458,28 @@ class SurfaceLearningValidator:
         
     def _create_initial_surface(self) -> NURBSSurface:
         """Create initial flat surface for learning"""
+        # Match the parameters from distorted surface creation
         num_eval_e, num_eval_n = 20, 20
-        eval_points_e = torch.linspace(0, 1, num_eval_e, device=self.device)
-        eval_points_n = torch.linspace(0, 1, num_eval_n, device=self.device)
+        eval_points_e = torch.linspace(1e-5, 1 - 1e-5, num_eval_e, device=self.device)
+        eval_points_n = torch.linspace(1e-5, 1 - 1e-5, num_eval_n, device=self.device)
         
-        num_ctrl_e, num_ctrl_n = 8, 8
-        degree_e, degree_n = 3, 3
+        num_ctrl_e, num_ctrl_n = 6, 6
+        degree_e, degree_n = 2, 2
         
-        # Initialize flat control points
-        ctrl_e = torch.linspace(-1.0, 1.0, num_ctrl_e, device=self.device)
-        ctrl_n = torch.linspace(-1.0, 1.0, num_ctrl_n, device=self.device)
-        ctrl_ee, ctrl_nn = torch.meshgrid(ctrl_e, ctrl_n, indexing='ij')
+        # Initialize control points using ARTIST test pattern
+        control_points_shape = (num_ctrl_e, num_ctrl_n)
+        ctrl_e_range = torch.linspace(-1.0, 1.0, num_ctrl_e, device=self.device)
+        ctrl_n_range = torch.linspace(-1.0, 1.0, num_ctrl_n, device=self.device)
         
-        control_points = torch.zeros(num_ctrl_e, num_ctrl_n, 4, device=self.device)
-        control_points[:, :, 0] = ctrl_ee
-        control_points[:, :, 1] = ctrl_nn
-        control_points[:, :, 2] = 0.0  # Flat
-        control_points[:, :, 3] = 1.0
+        # Use cartesian product like in ARTIST test
+        ctrl_grid = torch.cartesian_prod(ctrl_e_range, ctrl_n_range)
+        ctrl_with_z = torch.hstack((
+            ctrl_grid,
+            torch.zeros((len(ctrl_grid), 1), device=self.device)  # Flat Z
+        ))
         
+        # Reshape to proper grid format
+        control_points = ctrl_with_z.reshape(control_points_shape + (3,))
         control_points = torch.nn.Parameter(control_points)
         
         return NURBSSurface(
@@ -367,13 +493,62 @@ class SurfaceLearningValidator:
         
     def _compute_surface_error(self, surface1: NURBSSurface, surface2: NURBSSurface) -> float:
         """Compute RMS error between two surfaces"""
-        points1, _ = surface1.calculate_surface_points_and_normals()
-        points2, _ = surface2.calculate_surface_points_and_normals()
+        
+        # Debug NURBS surface properties
+        logger.info(f"Surface 1 - degree_e: {surface1.degree_e}, degree_n: {surface1.degree_n}")
+        logger.info(f"Surface 1 - control_points shape: {surface1.control_points.shape}")
+        logger.info(f"Surface 1 - control_points range: [{surface1.control_points.min():.3f}, {surface1.control_points.max():.3f}]")
+        logger.info(f"Surface 1 - control_points contain nan: {torch.isnan(surface1.control_points).any()}")
+        logger.info(f"Surface 1 - eval_points_e shape: {surface1.evaluation_points_e.shape}")
+        logger.info(f"Surface 1 - eval_points_n shape: {surface1.evaluation_points_n.shape}")
+        
+        logger.info(f"Surface 2 - degree_e: {surface2.degree_e}, degree_n: {surface2.degree_n}")
+        logger.info(f"Surface 2 - control_points shape: {surface2.control_points.shape}")
+        logger.info(f"Surface 2 - control_points range: [{surface2.control_points.min():.3f}, {surface2.control_points.max():.3f}]")
+        logger.info(f"Surface 2 - control_points contain nan: {torch.isnan(surface2.control_points).any()}")
+        
+        # Try to identify where NaNs are coming from in NURBS calculation
+        try:
+            points1, _ = surface1.calculate_surface_points_and_normals()
+            logger.info(f"Surface 1 points calculated successfully: {points1.shape}")
+        except Exception as e:
+            logger.error(f"Error calculating surface 1 points: {e}")
+            return float('inf')
+            
+        try:
+            points2, _ = surface2.calculate_surface_points_and_normals()
+            logger.info(f"Surface 2 points calculated successfully: {points2.shape}")
+        except Exception as e:
+            logger.error(f"Error calculating surface 2 points: {e}")
+            return float('inf')
+        
+        logger.info(f"Surface 1 points contain nan: {torch.isnan(points1).any()}")
+        logger.info(f"Surface 2 points contain nan: {torch.isnan(points2).any()}")
+        
+        # If we have NaN values, this is a critical error - don't mask it
+        if torch.isnan(points1).any() or torch.isnan(points2).any():
+            logger.error("CRITICAL: NaN values detected in surface points - NURBS calculation is broken!")
+            # Let's examine the NaN pattern
+            if torch.isnan(points1).any():
+                nan_count1 = torch.isnan(points1).sum().item()
+                logger.error(f"Surface 1 has {nan_count1} NaN values out of {points1.numel()}")
+            if torch.isnan(points2).any():
+                nan_count2 = torch.isnan(points2).sum().item()
+                logger.error(f"Surface 2 has {nan_count2} NaN values out of {points2.numel()}")
+            return float('inf')
+        
+        # Handle dimension mismatch by taking only spatial coordinates
+        if points1.shape[-1] != points2.shape[-1]:
+            min_dims = min(points1.shape[-1], points2.shape[-1])
+            points1 = points1[..., :min_dims]
+            points2 = points2[..., :min_dims]
+            logger.info(f"Adjusted to {min_dims} dimensions")
         
         # Compute RMS difference in surface points
         diff = points1 - points2
         rms_error = torch.sqrt(torch.mean(diff**2)).item()
         
+        logger.info(f"RMS error: {rms_error}")
         return rms_error
 
 

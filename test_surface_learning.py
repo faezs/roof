@@ -21,10 +21,12 @@ import torch
 import artist.util.nurbs
 original_find_span = artist.util.nurbs.NURBSSurface.find_span
 
+DEVICE="mps"
+
 @staticmethod
 def patched_find_span(degree, evaluation_points, knot_vector, control_points, device="cpu"):
     """Patched find_span that forces CPU device"""
-    device = torch.device("cpu")  # Force CPU
+    device = torch.device(DEVICE)  # Force CPU
     return original_find_span(degree, evaluation_points, knot_vector, control_points, device)
 
 # Apply the patch
@@ -52,14 +54,14 @@ from artist.util.nurbs import NURBSSurface
 from image_based_surface_converter import ImageBasedSurfaceConverter
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
 class DistortedMirrorGenerator:
     """Generates heliostats with known surface distortions for testing"""
     
-    def __init__(self, device: torch.device = torch.device("cpu")):
+    def __init__(self, device: torch.device = torch.device(DEVICE)):
         self.device = device
         
     def create_distorted_nurbs_surface(self, 
@@ -128,7 +130,10 @@ class DistortedMirrorGenerator:
     def create_test_scenario(self, nurbs_surface: NURBSSurface) -> Scenario:
         """Create a test scenario with the given NURBS surface"""
         
+        logger.debug("Starting scenario creation...")
+        
         # Create target area (receiver)
+        logger.debug("Creating target config...")
         target_config = TargetAreaConfig(
             target_area_key="receiver",
             geometry="planar",
@@ -137,12 +142,16 @@ class DistortedMirrorGenerator:
             plane_e=1.0,
             plane_u=1.0,
         )
+        logger.debug("Target config created")
         
+        logger.debug("Creating target list config...")
         target_list_config = TargetAreaListConfig(
             target_area_list=[target_config]
         )
+        logger.debug("Target list config created")
         
         # Create light source (sun)
+        logger.debug("Creating light source config...")
         light_source_config = LightSourceConfig(
             light_source_key="sun",
             light_source_type="sun",
@@ -151,14 +160,20 @@ class DistortedMirrorGenerator:
             mean=0.0,
             covariance=4.3681e-06,  # Standard solar disk size
         )
+        logger.debug("Light source config created")
         
+        logger.debug("Creating light source list config...")
         light_source_list_config = LightSourceListConfig(
             light_source_list=[light_source_config]
         )
+        logger.debug("Light source list config created")
         
         # Create facet config from NURBS surface
+        logger.debug("About to calculate surface points and normals...")
         surface_points, surface_normals = nurbs_surface.calculate_surface_points_and_normals()
+        logger.debug("Surface points and normals calculated successfully")
         
+        logger.debug("Creating facet config...")
         facet_config = FacetConfig(
             facet_key="test_facet",
             facet_name="Test Facet",
@@ -169,8 +184,10 @@ class DistortedMirrorGenerator:
             width=2.0,
             height=2.0,
         )
+        logger.debug("Facet config created")
         
         # Create heliostat config
+        logger.debug("Creating heliostat config...")
         heliostat_config = HeliostatConfig(
             heliostat_key="test_heliostat",
             heliostat_name="Test Heliostat",
@@ -181,18 +198,24 @@ class DistortedMirrorGenerator:
             kinematic_type="rigid_body",
             actuator_type="ideal",
         )
+        logger.debug("Heliostat config created")
         
+        logger.debug("Creating heliostat list config...")
         heliostat_list_config = HeliostatListConfig(
             heliostat_list=[heliostat_config]
         )
+        logger.debug("Heliostat list config created")
         
         # Create power plant config
+        logger.debug("Creating power plant config...")
         power_plant_config = PowerPlantConfig(
             power_plant_position=torch.tensor([0.0, 0.0, 0.0], device=self.device),
             power_plant_name="Test Plant",
         )
+        logger.debug("Power plant config created")
         
         # Create scenario
+        logger.debug("Creating final scenario object...")
         scenario = Scenario(
             power_plant_config=power_plant_config,
             target_area_list_config=target_list_config,
@@ -200,6 +223,7 @@ class DistortedMirrorGenerator:
             heliostat_list_config=heliostat_list_config,
             device=self.device,
         )
+        logger.debug("Scenario object created successfully")
         
         return scenario
 
@@ -207,7 +231,7 @@ class DistortedMirrorGenerator:
 class FocalSpotGenerator:
     """Generates realistic focal spot bitmaps from test scenarios"""
     
-    def __init__(self, device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+    def __init__(self, device: torch.device = torch.device("cuda" if torch.cuda.is_available() else DEVICE)):
         self.device = device
         
     def generate_focal_spots(self, 
@@ -246,7 +270,7 @@ class FocalSpotGenerator:
 class SurfaceLearningValidator:
     """Validates that the learning system can recover known surfaces"""
     
-    def __init__(self, device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+    def __init__(self, device: torch.device = torch.device("cuda" if torch.cuda.is_available() else DEVICE)):
         self.device = device
         
     def validate_learning(self, 
@@ -358,7 +382,7 @@ def run_comprehensive_test():
     
     logger.info("Starting comprehensive surface learning test...")
     
-    device = torch.device("cpu")
+    device = torch.device(DEVICE)
     logger.info(f"Using device: {device}")
     
     # Test different distortion types
@@ -370,16 +394,18 @@ def run_comprehensive_test():
         
         # Create distorted mirror
         mirror_gen = DistortedMirrorGenerator(device)
+        logger.debug("mirror generated")
         distorted_surface = mirror_gen.create_distorted_nurbs_surface(
             distortion_type=distortion_type,
             distortion_magnitude=0.02  # 2cm distortion
         )
-        
+        logger.debug("surface distorted")
         # Create test scenario
         scenario = mirror_gen.create_test_scenario(distorted_surface)
-        
+        logger.debug("scenario creted")
         # Generate focal spots for different sun positions
         focal_gen = FocalSpotGenerator(device)
+        logger.debug("focal_gen")
         sun_directions = [
             torch.tensor([0.0, -1.0, 0.0, 0.0], device=device),  # South
             torch.tensor([0.3, -0.9, 0.1, 0.0], device=device),  # Southeast
@@ -388,16 +414,17 @@ def run_comprehensive_test():
         ]
         
         focal_spots = focal_gen.generate_focal_spots(scenario, sun_directions, add_noise=True)
-        
+        logger.debug("focal_spots")
         # Target positions (all aiming at receiver center)
         target_positions = [torch.tensor([0.0, 50.0, 10.0], device=device)] * len(sun_directions)
-        
+    
         # Validate learning
         validator = SurfaceLearningValidator(device)
+        logger.debug("validator")
         test_results = validator.validate_learning(
             distorted_surface, focal_spots, sun_directions, target_positions
         )
-        
+        logger.debug("test_results: ", test_results)
         results[distortion_type] = test_results
         
         # Plot focal spots
@@ -411,7 +438,7 @@ def run_comprehensive_test():
         plt.suptitle(f'Focal Spots - {distortion_type.replace("_", " ").title()}')
         plt.tight_layout()
         plt.savefig(f'focal_spots_{distortion_type}.png', dpi=150, bbox_inches='tight')
-        plt.show()
+        #plt.show()
     
     # Summary
     logger.info("\n=== Test Summary ===")

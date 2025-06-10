@@ -17,6 +17,12 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+# Import device utilities
+from device_utils import get_default_device, ensure_device
+
+# Get default device for the session
+DEFAULT_DEVICE = get_default_device()
+
 # ARTIST imports (adjust paths as needed)
 from artist.util.surface_converter import SurfaceConverter
 from artist.util.configuration_classes import FacetConfig
@@ -132,7 +138,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
     def preprocess_focal_spot_image(
         self, 
         image: torch.Tensor,
-        device: Union[torch.device, str] = "cuda"
+        device: Union[torch.device, str] = None
     ) -> torch.Tensor:
         """
         Preprocess focal spot image for analysis.
@@ -149,7 +155,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         torch.Tensor
             Preprocessed image with noise reduction and calibration
         """
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         image = image.to(device)
         
         # Noise reduction
@@ -174,7 +180,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
     def extract_focal_spot_center(
         self, 
         image: torch.Tensor,
-        device: Union[torch.device, str] = "cuda"
+        device: Union[torch.device, str] = None
     ) -> torch.Tensor:
         """
         Extract center of mass from focal spot image.
@@ -193,7 +199,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         torch.Tensor
             Center of mass coordinates (2D)
         """
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         image = image.to(device)
         
         # Create coordinate grids
@@ -216,7 +222,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         self,
         image_coords: torch.Tensor,
         target_position: torch.Tensor,
-        device: Union[torch.device, str] = "cuda"
+        device: Union[torch.device, str] = None
     ) -> torch.Tensor:
         """
         Convert image coordinates to 3D world coordinates on target plane.
@@ -235,7 +241,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         torch.Tensor
             3D world coordinates
         """
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         
         # Simple projection model - can be enhanced with full camera calibration
         # Assumes target plane is perpendicular to camera view
@@ -268,7 +274,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         self,
         scenario: Scenario,
         heliostat_id: int = 0,
-        device: Union[torch.device, str] = "cuda"
+        device: Union[torch.device, str] = None
     ) -> NURBSSurface:
         """
         Fit NURBS surface by matching predicted vs observed focal spots.
@@ -290,7 +296,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         NURBSSurface
             Optimized NURBS surface
         """
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         log.info("Starting NURBS fitting from focal spot images")
         
         if len(self.focal_spot_images) == 0:
@@ -381,7 +387,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         
     def _initialize_nurbs_surface(self, device: Union[torch.device, str]) -> NURBSSurface:
         """Initialize NURBS surface with reasonable default control points."""
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         
         # Create control points for flat surface initially
         control_points_shape = (self.number_control_points_e, self.number_control_points_n)
@@ -447,7 +453,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         
         Follows ARTIST's AlignmentOptimizer pattern for raytracing.
         """
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         
         # Find target area containing the target position
         target_area = None
@@ -496,7 +502,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         self,
         scenario: Scenario,
         heliostat_id: int = 0,
-        device: Union[torch.device, str] = "cuda"
+        device: Union[torch.device, str] = None
     ) -> List[FacetConfig]:
         """
         Generate surface configuration from focal spot images.
@@ -517,7 +523,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         List[FacetConfig]
             Facet configurations compatible with ARTIST
         """
-        device = torch.device(device)
+        device = ensure_device(device, DEFAULT_DEVICE)
         log.info("Generating surface configuration from focal spot images")
         
         # Fit NURBS surface from images
@@ -586,7 +592,7 @@ class ImageBasedSurfaceConverter(SurfaceConverter):
         log.info(f"Saved learned surface configuration to {output_path}")
 
 
-def create_example_scenario_for_learning(device: Union[torch.device, str] = "cuda") -> Scenario:
+def create_example_scenario_for_learning(device: Union[torch.device, str] = None) -> Scenario:
     """
     Create a minimal ARTIST scenario for surface learning demonstration.
     
@@ -609,7 +615,7 @@ if __name__ == "__main__":
     import torch
     
     logging.basicConfig(level=logging.INFO)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_default_device()
     
     # Example: Create converter with synthetic focal spot data
     converter = ImageBasedSurfaceConverter(

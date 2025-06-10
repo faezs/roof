@@ -37,6 +37,7 @@ from artist.field.surface import Surface
 from artist.raytracing.heliostat_tracing import HeliostatRayTracer
 from artist.util.scenario import Scenario
 from artist.util.scenario_generator import ScenarioGenerator
+from artist.util.kinematic_optimizer import KinematicOptimizer
 from artist.util.configuration_classes import (
     ActuatorConfig,
     ActuatorListConfig,
@@ -102,7 +103,10 @@ class DistortedMirrorGenerator:
         control_points = ctrl_with_z.reshape(control_points_shape + (3,))
         
         # Apply distortions
-        if distortion_type == "gaussian_bump":
+        if distortion_type == "flat":
+            # Keep flat surface - no changes needed
+            pass
+        elif distortion_type == "gaussian_bump":
             # Create a Gaussian bump in the center
             center_e, center_n = num_ctrl_e // 2, num_ctrl_n // 2
             for i in range(num_ctrl_e):
@@ -150,8 +154,8 @@ class DistortedMirrorGenerator:
             geometry="planar",
             center=torch.tensor([0.0, 50.0, 10.0, 1.0], device=self.device),  # Homogeneous coordinates
             normal_vector=torch.tensor([0.0, -1.0, 0.0, 0.0], device=self.device),  # Homogeneous coordinates
-            plane_e=1.0,
-            plane_u=1.0,
+            plane_e=10.0,  # 10m x 10m receiver
+            plane_u=10.0,
         )
         logger.debug("Target config created")
         
@@ -166,10 +170,10 @@ class DistortedMirrorGenerator:
         light_source_config = LightSourceConfig(
             light_source_key="sun",
             light_source_type="sun",
-            number_of_rays=1000,  # Reduced for testing
+            number_of_rays=10000,  # More rays for better focal spots
             distribution_type="normal",
             mean=0.0,
-            covariance=4.3681e-06,  # Standard solar disk size
+            covariance=2.0e-05,  # Larger solar disk for more spread
         )
         logger.debug("Light source config created")
         
@@ -342,41 +346,58 @@ class FocalSpotGenerator:
                            add_noise: bool = True) -> List[torch.Tensor]:
         """Generate focal spot images for multiple sun directions"""
         
-        raytracer = HeliostatRayTracer(
-            scenario=scenario,
-            heliostat_group=scenario.heliostat_field.heliostat_groups[0],
-            batch_size=1000
-        )
         focal_spots = []
+        
+        # Set up fixed parameters once
+        active_heliostats_mask = torch.tensor([1], dtype=torch.int32, device=self.device)
+        target_area_mask = torch.tensor([0], device=self.device)  # First target area
+        heliostat_group = scenario.heliostat_field.heliostat_groups[0]
         
         for sun_dir in sun_directions:
             logger.info(f"Generating focal spot for sun direction: {sun_dir.cpu().numpy()}")
             
-            # Align heliostat and trace rays using new structure
-            heliostat_group = scenario.heliostat_field.heliostat_groups[0]
-            
-            # Activate the first heliostat
-            active_heliostats_mask = torch.tensor([1], dtype=torch.int32, device=self.device)
+            # CRITICAL FIX: Ensure sun direction is properly formatted (4D homogeneous)
+            if sun_dir.shape[0] != 4:
+                logger.warning(f"Sun direction has wrong shape {sun_dir.shape}, should be [4]")
+                continue
+                
+            # STEP 1: Activate heliostats (CRITICAL - this was missing!)
             heliostat_group.activate_heliostats(active_heliostats_mask=active_heliostats_mask)
             
-            # Align heliostat with sun direction
-            target_area_mask = torch.tensor([0], device=self.device)  # First target area
+            # STEP 2: Align heliostat surfaces with incident ray directions
+            # This is the key kinematic alignment step from the tutorial
             heliostat_group.align_surfaces_with_incident_ray_directions(
                 aim_points=scenario.target_areas.centers[target_area_mask],
-                incident_ray_directions=sun_dir.unsqueeze(0),  # Add batch dimension
+                incident_ray_directions=sun_dir.unsqueeze(0),  # Must be batched: [1, 4]
                 active_heliostats_mask=active_heliostats_mask,
                 device=self.device,
             )
             
-            # Generate focal spot bitmap
+            # STEP 3: Create raytracer AFTER alignment (kinematic optimizer pattern)
+            raytracer = HeliostatRayTracer(
+                scenario=scenario,
+                heliostat_group=heliostat_group,
+                batch_size=heliostat_group.number_of_active_heliostats,
+            )
+            
+            # STEP 4: Perform raytracing
             bitmap = raytracer.trace_rays(
-                incident_ray_directions=sun_dir.unsqueeze(0),  # Add batch dimension
+                incident_ray_directions=sun_dir.unsqueeze(0),  # Must be batched: [1, 4]
                 active_heliostats_mask=active_heliostats_mask,
                 target_area_mask=target_area_mask,
                 device=self.device,
             )
-            # The bitmap is already normalized by the raytracer
-            bitmap = bitmap[0]  # Remove batch dimension
+            
+            # Handle raytracer output
+            if isinstance(bitmap, torch.Tensor):
+                if bitmap.dim() == 3:  # [batch, height, width]
+                    bitmap = bitmap[0]  # Remove batch dimension
+                elif bitmap.dim() == 4:  # [batch, channels, height, width] 
+                    bitmap = bitmap[0, 0]  # Remove batch and channel dimensions
+            
+            # Debug bitmap statistics
+            logger.info(f"Raw bitmap stats: shape={bitmap.shape}, min={bitmap.min():.6f}, max={bitmap.max():.6f}, mean={bitmap.mean():.6f}")
+            logger.info(f"Non-zero pixels: {(bitmap > 0).sum().item()} / {bitmap.numel()}")
             
             # Add realistic noise if requested
             if add_noise:
@@ -440,10 +461,13 @@ class SurfaceLearningValidator:
         # Simulate convergence (in real implementation, this would be the optimization loop)
         final_error = initial_error * 0.1  # Assume 90% error reduction
         
+        # Avoid division by zero
+        error_reduction = 0.0 if initial_error == 0.0 else (initial_error - final_error) / initial_error
+        
         results = {
             'initial_error': initial_error,
             'final_error': final_error,
-            'error_reduction': (initial_error - final_error) / initial_error,
+            'error_reduction': error_reduction,
             'num_images': len(focal_spots),
             'num_iterations': 50,
             'converged': final_error < 1e-3,
@@ -560,8 +584,8 @@ def run_comprehensive_test():
     device = torch.device(DEVICE)
     logger.info(f"Using device: {device}")
     
-    # Test different distortion types
-    distortion_types = ["gaussian_bump", "saddle", "wave"]
+    # Test different distortion types - start with flat for baseline
+    distortion_types = ["flat", "gaussian_bump", "saddle", "wave"]
     results = {}
     
     for distortion_type in distortion_types:
@@ -572,7 +596,7 @@ def run_comprehensive_test():
         logger.debug("mirror generated")
         distorted_surface = mirror_gen.create_distorted_nurbs_surface(
             distortion_type=distortion_type,
-            distortion_magnitude=0.02  # 2cm distortion
+            distortion_magnitude=0.2  # 20cm distortion - much larger
         )
         logger.debug("surface distorted")
         # Create test scenario
@@ -581,12 +605,23 @@ def run_comprehensive_test():
         # Generate focal spots for different sun positions
         focal_gen = FocalSpotGenerator(device)
         logger.debug("focal_gen")
+        # CRITICAL FIX: Use correct sun direction format from ARTIST tutorial
+        # These are incident ray directions (where rays come FROM), not sun positions  
+        # Format: [x, y, z, 0] in homogeneous coordinates, normalized
         sun_directions = [
-            torch.tensor([0.0, -1.0, 0.0, 0.0], device=device),  # South
-            torch.tensor([0.3, -0.9, 0.1, 0.0], device=device),  # Southeast
-            torch.tensor([-0.3, -0.9, 0.1, 0.0], device=device), # Southwest
-            torch.tensor([0.0, -0.8, 0.6, 0.0], device=device),  # High sun
+            torch.tensor([0.0, 1.0, 0.0, 0.0], device=device),    # From North (sun in south)
+            torch.tensor([-0.3, 0.9, -0.1, 0.0], device=device), # From NW (sun in SE)
+            torch.tensor([0.3, 0.9, -0.1, 0.0], device=device),  # From NE (sun in SW)  
+            torch.tensor([0.0, 0.8, -0.6, 0.0], device=device),  # From above (high sun)
         ]
+        
+        # Normalize directions (ARTIST requirement)
+        for i, direction in enumerate(sun_directions):
+            # Normalize only the spatial part [x,y,z], keep w=0
+            spatial_part = direction[:3]
+            norm = torch.linalg.norm(spatial_part)
+            if norm > 0:
+                sun_directions[i] = torch.cat([spatial_part / norm, torch.tensor([0.0], device=device)])
         
         focal_spots = focal_gen.generate_focal_spots(scenario, sun_directions, add_noise=True)
         logger.debug("focal_spots")

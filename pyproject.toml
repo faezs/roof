@@ -1,0 +1,148 @@
+[project]
+name = "heliostat-control"
+version = "0.1.0"
+description = "Physics-based heliostat control system with MuJoCo-MJX, ARTIST raytracing, and SBV verification"
+authors = [
+    {name = "Heliostat Team", email = "team@heliostat.dev"}
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+
+dependencies = [
+    # Core scientific computing
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "matplotlib>=3.6.0",
+    "pandas>=2.0.0",
+    "h5py>=3.8.0",
+    
+    # Machine learning and deep learning
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "scikit-learn>=1.3.0",
+    
+    # JAX ecosystem for MuJoCo-MJX
+    "jax>=0.4.0",
+    "jaxlib>=0.4.0",
+    "optax>=0.1.7",
+    "flax>=0.7.0",
+    "chex>=0.1.8",
+    "dm-haiku>=0.0.10",
+    
+    # Physics simulation
+    "mujoco>=3.0.0",
+    "mujoco-mjx>=3.0.0",
+    
+    # Computer vision and image processing
+    "opencv-python>=4.8.0",
+    "pillow>=10.0.0",
+    "scikit-image>=0.21.0",
+    "kornia>=0.7.0",
+    
+    # Object detection for safety
+    "ultralytics>=8.0.0",
+    
+    # Development and utilities
+    "ipython>=8.0.0",
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0",
+    "requests>=2.31.0",
+    "typing-extensions>=4.7.0",
+    "colorlog>=6.7.0",
+    
+    # Communication and networking
+    "pyzmq>=25.0.0",
+    "aio-mqtt",
+    "psutil>=5.9.0",
+
+    # Optics
+    "rayoptics",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.0.280",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+]
+
+raspberry-pi = [
+    # Raspberry Pi specific packages
+    "picamera2>=0.3.12",
+    "pylepton>=0.1.0",  # FLIR Lepton thermal camera
+    "RPi.GPIO>=0.7.1",
+]
+
+simulation = [
+    # Additional simulation packages
+    "control>=0.9.4",
+    "sympy>=1.12",
+    "casadi>=3.6.0",  # For optimization
+]
+
+[project.scripts]
+heliostat-sim = "mujoco_heliostat_sim:main"
+heliostat-control = "mjx_autodiff_control:main"
+heliostat-demo = "demo_mujoco_integration:main"
+
+[build-system]
+requires = ["hatchling>=1.18.0", "hatch-vcs>=0.3.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.black]
+line-length = 100
+target-version = ["py312", "py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+select = ["E", "F", "W", "I", "N", "UP", "ANN", "S", "B", "A", "COM", "C4", "DTZ", "T10", "EM", "EXE", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "PTH", "PGH", "PL", "TRY", "NPY", "RUF"]
+ignore = ["ANN101", "ANN102", "S101", "COM812", "ISC001"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mujoco.*",
+    "jax.*",
+    "flax.*",
+    "optax.*",
+    "artist.*",
+    "cv2.*",
+    "ultralytics.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config", 
+    "--cov=.",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]

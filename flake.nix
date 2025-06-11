@@ -1,5 +1,5 @@
 {
-  description = "A heliostat project";
+  description = "A heliostat project with MuJoCo-MJX, ARTIST, and SBV verification";
 
   inputs = {
     vehicle = {
@@ -17,8 +17,10 @@
       url = "github:faezs/ARTIST/nix-support";
       inputs.nixpkgs.follows = "vehicle/nixpkgs";
     };
-    dream2nix.url = "github:nix-community/dream2nix";
-    dream2nix.inputs.nixpkgs.follows = "vehicle/nixpkgs";
+    dream2nix = {
+      url = "github:nix-community/dream2nix";
+      inputs.nixpkgs.follows = "vehicle/nixpkgs";
+    };
   };
 
   outputs = inputs@{ self, vehicle, flake-parts, roshni-solar-ui, artist, dream2nix, ... }: 
@@ -49,27 +51,26 @@
         
         # Get ARTIST package
         artistPackage = artist.packages.${system}.default;
+
+        # Main heliostat package using dream2nix
+        heliostatPackage = dream2nix.lib.evalModules {
+          packageSets.nixpkgs = pkgs;
+          modules = [
+            ./default.nix
+            {
+              # Pass ARTIST package to the override
+              deps.artistPackage = artistPackage;
+              
+              # Aid dream2nix to find the project root
+              paths.projectRoot = ./.;
+              paths.projectRootFile = "flake.nix";
+              paths.package = ./.;
+            }
+          ];
+        };
         
-        # Python environment with ARTIST and dependencies
-        pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-          numpy
-          scipy
-          matplotlib
-          pandas
-          ipython
-          torch
-          torchvision
-          h5py              # For HDF5 file handling (ARTIST scenarios)
-          opencv4           # For computer vision/image processing
-          pillow            # For image I/O
-          scikit-image      # For image analysis
-          scikit-learn      # For machine learning utilities
-          tqdm              # For progress bars
-          pyyaml            # For YAML configuration files
-          requests          # For web requests
-          typing-extensions # For enhanced typing support
-          colorlog          # ARTIST dependency
-        ]);
+        # Extract Python environment from dream2nix package
+        pythonEnv = heliostatPackage.config.deps.python;
 
         # Haskell environment with SBV for verified control
         haskellPackages = pkgs.haskellPackages.override {
@@ -92,55 +93,84 @@
           array
         ]);
 
-        # Setup python app using dream2nix and uv
-        heliostat-app = dream2nix.lib.evalModules {
-          packageSets.nixpkgs = pkgs;
-          modules = [
-            {
-              name = "heliostat-app";
-              version = "0.1.0";
-              
-              # Python project configuration
-              builder = "pip";
-              
-              deps = {
-                inherit pythonEnv;
-                inherit soltrace;
-                vehicle = vehicle.outputs.packages.${system}.vehicle;
-              };
-              
-              # Setup paths
-              paths = {
-                projectRoot = ./.;
-                projectRootFile = "flake.nix";
-              };
-              
-              # Environment variables
-              env = {
-                PYTHONPATH = "${soltrace}/lib:$PYTHONPATH";
-              };
-            }
-          ];
-        };
-
       in {
+        # Main packages
+        packages = {
+          # Main heliostat package using dream2nix
+          default = heliostatPackage;
+          
+          # Legacy SolTrace integration (kept for compatibility)
+          heliostat-legacy = pkgs.stdenv.mkDerivation {
+            name = "heliostat-optical-model";
+            version = "0.1.0";
+            src = ./.;
+            
+            buildInputs = [
+              pythonEnv
+              artistPackage
+              vehicle.packages.${system}.vehicle
+            ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ soltrace ];
+            
+            installPhase = ''
+              mkdir -p $out/bin $out/lib $out/share
+              
+              # Copy model files
+              cp *.vcl $out/lib/ || true
+              cp *.vclo $out/lib/ || true
+              cp heliostat.md $out/share/ || true
+              cp *.py $out/lib/ || true
+              
+              # Create main entrypoint
+              cat > $out/bin/heliostat-demo <<EOF
+              #!/usr/bin/env python3
+              import sys
+              sys.path.insert(0, "$out/lib")
+              from demo_mujoco_integration import main
+              main()
+              EOF
+              chmod +x $out/bin/heliostat-demo
+              
+              ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
+                # Add SolTrace wrapper
+                cat > $out/bin/run-soltrace <<EOF
+                #!/bin/sh
+                exec ${soltrace}/bin/SolTrace "\$@"
+                EOF
+                chmod +x $out/bin/run-soltrace
+              ''}
+            '';
+          };
+        };
+        
         # Development shell with all tools
         devShells.default = pkgs.mkShell {
           name = "heliostat-dev";
           inputsFrom = [ 
             vehicle.packages.${system}.default
             artistPackage.devShell  # Include ARTIST dev shell
+            heliostatPackage.devShell  # Include dream2nix dev shell
           ];
           packages = [ 
             vehicle.packages.${system}.default
-            pythonEnv
             haskellEnv
             artistPackage  # ARTIST package
             pkgs.uv
             pkgs.z3  # SMT solver for SBV
+            
+            # Additional camera system dependencies
+            pkgs.ffmpeg     # Video encoding for camera streams
+            
+            # Development tools
+            pkgs.ruff       # Python linter
+            pkgs.black      # Python formatter
+            pkgs.mypy       # Type checker
           ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ 
             soltrace
             pkgs.cvc4  # Alternative SMT solver
+          ] ++ lib.optionals pkgs.stdenv.isLinux [
+            # Raspberry Pi specific packages (Linux only)
+            pkgs.raspberrypi-utils
+	    pkgs.v4l-utils  # Video4Linux utilities for camera control
           ];
           
           shellHook = ''
@@ -151,88 +181,25 @@
             ''}
             
             echo "Heliostat development environment ready"
+            echo "Available packages:"
+            echo "  - ARTIST raytracer (import artist)"
+            echo "  - MuJoCo physics (import mujoco)"
+            echo "  - JAX ecosystem (jax, optax, flax)"
+            echo "  - PyTorch with device support"
+            echo "  - All dependencies managed by dream2nix"
             ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
-              echo "SolTrace binary available at: ${soltrace}/bin/SolTrace"
-              echo "Python API available (import pysoltrace)"
+              echo "  - SolTrace binary: ${soltrace}/bin/SolTrace"
+              echo "  - SolTrace Python API (import pysoltrace)"
             ''}
-            echo "ARTIST package available (import artist)"
-          '';
-        };
-        
-        # Main package for the heliostat
-        packages.default = pkgs.stdenv.mkDerivation {
-          name = "heliostat-optical-model";
-          version = "0.1.0";
-          src = ./.;
-          
-          buildInputs = [
-            pythonEnv
-            artistPackage
-            vehicle.packages.${system}.vehicle
-          ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ soltrace.soltrace ];
-          
-          installPhase = ''
-            mkdir -p $out/bin $out/lib $out/share
-            
-            # Copy model files
-            cp *.vcl $out/lib/ || true
-            cp *.vclo $out/lib/ || true
-            cp heliostat.md $out/share/ || true
-            
-            # Create Python wrapper for SolTrace API
-            cat > $out/bin/heliostat-sim <<EOF
-            #!/usr/bin/env python3
-            
-            import sys
-            import os
-            import numpy as np
-            
-            # Add SolTrace Python API path
-            sys.path.append("${soltrace}/lib")
-            import pysoltrace
-            
-            def run_optical_simulation(input_file=None):
-                # Initialize SolTrace API
-                trace = pysoltrace.simulation()
-                
-                # Load input file or set up a new simulation
-                if input_file and os.path.exists(input_file):
-                    trace.load(input_file)
-                else:
-                    # Set up a basic heliostat model
-                    trace.add_sun(flux=1000, shape=0)  # 1000 W/m², pillbox distribution
-                    
-                    # Create a flat heliostat mirror
-                    trace.add_optical_element(name="Heliostat", 
-                                           surface_type=1,  # Flat
-                                           optical_type=1,  # Mirror
-                                           aperture_type=1) # Rectangular
-                
-                # Run the trace
-                trace.run()
-                
-                # Get results
-                flux_data = trace.get_flux_map()
-                
-                # Save results for analysis
-                np.savetxt("flux_results.csv", flux_data, delimiter=",")
-                
-                return flux_data
-            
-            if __name__ == "__main__":
-                input_file = sys.argv[1] if len(sys.argv) > 1 else None
-                run_optical_simulation(input_file)
-            EOF
-            chmod +x $out/bin/heliostat-sim
-            
-            ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
-              # Add SolTrace wrapper
-              cat > $out/bin/run-soltrace <<EOF
-              #!/bin/sh
-              exec ${soltrace}/bin/SolTrace "\$@"
-              EOF
-              chmod +x $out/bin/run-soltrace
-            ''}
+            echo ""
+            echo "MuJoCo-MJX Features:"
+            echo "  - Physics-based heliostat simulation"
+            echo "  - JAX autodiff for optimal control"
+            echo "  - Wind disturbance modeling"
+            echo "  - Real-time surface deformation"
+            echo "  - Integration with ARTIST raytracing"
+            echo ""
+            echo "Run: python demo_mujoco_integration.py"
           '';
         };
         

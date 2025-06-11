@@ -1,0 +1,380 @@
+An Overview of Electrostatic Speakers
+
+Wes Hatch
+
+1. History of the Electrostatic Loudspeaker
+Given the recent stimulation of interest in the electrostatic loudspeaker (ESL), one
+would suspect that this type of speaker is a relatively new development. However, this is
+not the case; the appearance of electrostatic speakers even predates that of the more
+commonly found dynamic coil speakers, dating back to the early 1920’s. It is known that
+condenser microphones have enjoyed a great deal of success since their introduction; why
+then, have these speakers—which operate on the same principle—taken so long to take
+root in mainstream audio application?
+On closer inspection, we learn that these unique speakers were, upon their initial
+release, plagued by unwanted discharges, electrical breakdown, low efficiency, rapid
+oxidation of unstable structural materials, and difficulty in obtaining thin, manageable
+membranes—in general, there were serious issues and concerns regarding their
+reliability. With the introduction of the much more rugged and reliable dynamic coil
+loudspeaker in the 1930’s, electrostatic speakers quickly became forgotten, taking a back
+seat to cheaper and more efficient alternatives. The problems associated with ESL’s
+arose partially from an early, crude design, but moreover from a lack of quality
+construction materials and techniques. This remained the case until the 1950’s, when
+discoveries of new materials, particularly that of polymer plastics, made possible the
+construction of more efficient and reliable models. In addition, new concepts of design
+evolved, seeking to take advantage of the full range of potential that electrostatics had to
+offer.
+During this time, there was an increasing demand for the high-quality
+reproduction of high frequencies. Audiophiles seemed to be demanding a new, higher
+standard in the quality of reproduced audio signals. Electrostatic speakers, by way of
+design, are readily able to offer a faithful reproduction of high frequency content, and
+behave very predictably when doing so. This is very desirable, of course, as overtones
+and higher harmonics can contribute significantly to the overall timbre of the sound; this
+more precise imitation of the original recorded signal helps to make the audio emerge
+more realistically. These factors, in short, contributed to a revival of interest in the
+electrostatic loudspeaker. Unfortunately, this revitalization has never been fully realized
+as, while ESL’s do excel at producing higher frequencies, the bass is difficult to
+reproduce and thus a more conventional moving-coil unit was always needed anyways;
+also, the cost of producing these devices has always put them out of reach of most
+consumers.
+2. How they work
+The basic design of an electrostatic loudspeaker consists of a very thin plastic
+membrane (1/10th the thickness of a human hair) suspended between two electrodes. The
+membrane is electrostatically charged with a high DC polarizing voltage, while the
+electrodes are fed with ground potential. Typical polarizing voltages are usually in the
+order of 2000 – 3000V. When there is no signal, the diaphragm remains suspended at
+equal distances between the two electrodes. If a voltage is impressed upon the primary
+coil of the transformer, a positive voltage appears at one electrode, while an equal, yet
+opposite in polarity, voltage appears at the other. Since like charges repel and opposite
+
+2
+
+charges attract, the diaphragm will be attracted to
+one side, while pushed away from the other. This
+arrangement is called a ‘push-pull’ configuration.
+If an audio signal is sent to the transformer
+instead of ground potential, an electromagnetic
+field will be created which varies in response to
+the changing voltage of the audio signal. The
+diaphragm can then be made to move back and
+forth in this field, consequently mimicking the
+changes in the input signal. Finally, both
+electrodes are perforated, so that they seem
+‘acoustically transparent,’ thus avoiding pressure
+effects of trapped air and also allowing acoustic
+energy to move away from the diaphragm.
+Two methods of constructing electrostatic
+speakers have emerged. The first involves
+stretching the diaphragm over a frame, supporting
+it at its edges, and leaving the middle unattached
+and free to vibrate. The second method, which is
+much less common today then it was in the
+1950’s and 60’s, uses an “inert diaphragm”
+supported by several tiny elements equally spaced across its surface. These spacers hold
+the diaphragm in the centre between the electrodes, yet more importantly allow the
+diaphragm to be curved without seriously impeding its ability to vibrate. This capability
+of curving the diaphragm is an important tool in controlling the directionality of radiated
+sound, as discussed later.
+2.1 Details of operation1
+The first item to understand is the forces at work in an electromagnetic field. A
+charge, Q, placed in a field of strength Vsig/2d will experience the following force:
+F = Q x (Vsig/2d)
+
+(a)
+
+where F is the force (N) experienced, Vsig is the signal voltage, Q is the strength of the
+charge (C), and 2d is the distance between each electrode (d is then the distance between
+the diaphragm and one electrode—this simplifies things later).
+This is adequate for small charges, but the polarizing voltage on the diaphragm is
+huge by comparison, so more detailed analysis is necessary. Let’s assume the total
+charge on the diaphragm will not change once it has reached equilibrium—the large
+resistance placed in series with the polarizing voltage helps prevent any discharge.
+Furthermore, by examining the simple schematic above, it should be obvious that there is
+an inherent capacitance present between each plate and the diaphragm. The total
+capacitance2 will vary as the diaphragm moves, increasing as it strays farther from
+equilibrium. Therefore its voltage must fall, as given in the fundamental equation:
+1
+2
+
+This section assumes an ESL with flat plates, of the ‘push-pull’ design.
+Ctotal = (C1 x C2)/ (C1 + C2) is not included above as it seems straightforward…
+
+3
+
+Q = CVpol = constant
+
+(b)
+
+where Q is the total charge (C) between the electrodes and the diaphragm, C is the total
+capacitance (F) of the system, and V is the polarizing voltage (V). Since Q will
+essentially remain constant, it follows then, that C and V will vary in an inverse
+relationship to each other. The capacitance of a parallel plate air-dielectric capacitor is
+given by the formula:
+C = _0A/d
+
+(c)
+
+where A is the area (m2) of the plates, d is the distance (m) between them, and _0 is a
+constant equaling 8.854 x 10-12 F/m. If we take the above result and, using equations (a)
+and (b), we can find the force which is created by the signal voltage; this result is
+independent of the diaphragms’ position from equilibrium:
+Fsig = _0AVpolVsig / d2
+Where Fsig is given in Newtons. So now we have an equation which relates how much
+force acts on the diaphragm given a certain input voltage. Typical forces for a 1.3m x
+0.7m diaphragm with a 2mm gap, a polarizing voltage of 3kV, and a signal voltage of
+2kV peak (very roughly approximating any ESL…) are in the range of 12 N.
+The above analysis neglects any loss of charge which the diaphragm may incur, it
+also neglects the fact that the force will vary according to the diaphragms’ position
+between the plates. However, this can give us a general idea of what is going on in an
+ESL, and what forces are at work.
+3. Performance related issues
+3.1 Radiation
+Single cones and domes can be said to behave effectively as point sources, in that
+the sound level they produce will drop by 6 dB for each doubling of distance away from
+the driver. However, the attenuation with distance from a planar source exhibits quite a
+different response. There is no decrease in the level until a distance of width/ ! has been
+reached (see diagram, next page), at which point a –3dB per doubling of distance is
+noticed. It is not until a distance of height/ ! is reached that we find the common –6dB
+decrease. The diaphragm of an electrostatic speaker is essentially an unbaffled piston,
+and behaves much like
+as described above. In
+the data shown,
+transitions occur
+abruptly; however, in
+the real world there
+would be a more
+gradual transition
+between sections.
+
+4
+
+Room conditions will affect the strength of the measured sound, too.
+Reverberations and can cause little attenuation in the listening space, which may
+complicate stereophonic reproduction. Controlling the directivity of the sound (discussed
+later), however, has had positive results in the quality and realism of stereo imaging.
+3.2 Frequency Response
+In general, the frequency response of a simple ESL can be observed below. Bass
+frequencies fall off at a rate of 6dB/octave, while there is a flat response for higher
+frequencies. Traditionally, ESL’s
+have been paired with moving coil
+sub-woofers to compensate for the
+loss of bass, but recently new, fullspectrum designs have made this
+unnecessary.
+The uppermost frequency limit
+is restricted primarily by the high
+current demands which the speaker
+places on the amplifier. Since the
+loudspeaker load is primarily one of
+capacitive reactance, there can be
+great amounts of current drawn at high
+frequencies. (Recall that: V = IR; V is
+kept constant, and Rcap will decrease at
+high frequencies, therefore I must
+increase).
+One unfortunate deficiency which electrostatic loudspeakers possess is a natural
+inability to reproduce low frequencies. The limiting factor in producing low-end is the
+‘excursion capability’ of the diaphragm. First, we must consider that the wavelength
+increases as the frequency decreases. So, in order to recreate bass frequencies, the
+diaphragm must be able to move a greater amount of air than it has to for higher
+frequencies. This can be accomplished in two ways: either we make the size of the
+diaphragm greater, or we allow it to have a greater degree of freedom in its amplitude as
+it vibrates. Both options have drawbacks, however. By making the membrane larger, we
+incur very irregular high-frequency directional control, but more importantly, there are
+feasibility limits as to how large we can go. Allowing the diaphragm more leeway to
+move is also not a viable solution because the gap between the diaphragm and electrodes
+must remain small. Otherwise, there will be insufficient attractive and repelling forces to
+move the diaphragm accurately, thus causing a loss of clarity in the higher frequencies.
+Therefore, it is customary to construct ESL’s using several diaphragms, or panels,
+of different sizes. Narrow, vertical panels used for the highest frequencies are placed
+next to larger ones for the middle and lower frequencies. By varying the size and tension
+of the diaphragm, these panels can then be optimized for a certain frequency range. The
+result is a smooth response, as each panel still operates as a full-range driver, but being
+optimized for a specific frequency range. Moreover, each radiating panel is proportional
+in size to the frequencies it will be radiating, thus having an effect over the dispersion of
+said frequencies (as discussed below). Finally, since each diaphragm acts as a full range
+
+5
+
+driver (but optimized for a certain range), there is no need for a crossover3 (although
+some systems still use them) and problems with phase distortion do not arise. There are
+no discontinuities in the frequency response curve, and we get the full music spectrum, as
+it was recorded. A variation on the above design is to use a crossover to filter out midand –high frequency content on the largest panels, and high frequency content on
+medium size panels. In this way, the entire radiating surface is used for the bass, with
+less area devoted to the midrange, and even less for higher frequencies. The result is that
+the levels of the different frequency ranges will be more carefully balanced, and the
+presence of the bass can be more readily heard4. Other strategies include setting the
+resonant frequency5 of each panel at a slightly different bass frequency, thus achieving
+peaks in the bass with the equivalent input voltage.
+Another advantage of a system of panels is that there is a reduced capacity per
+section. This reduces the destructiveness of a spark should a spark occur between the
+electrodes. With a large capacity charged to a high potential, a spark may readily be hot
+enough to burn a hole in through the diaphragm, while with smaller panels a much less
+intense spark occurs for the same voltage. Also, the overall sound will not be affected as
+other panels will continue to radiate while the one afflicted recharges.
+3.1.1 Directivity
+Electrostatic loudspeakers offer new possibilities in controlling the directivity of
+sound; indeed, much of the appeal of these speakers stems from their unique radiation
+properties. As we learned earlier, there are two methods of going about constructing
+ESL’s: with a curved diaphragm, or simply with a flat diaphragm.
+The curved diaphragm methodology was the first and earliest approach to
+controlling radiation patterns. As we should recall, a flat radiating surface which is large
+compared to the wavelength of the radiated sound becomes increasingly directional. That
+is, until we curve the plane in the horizontal direction. A curved radiator of this type is
+observed to give an even dispersion of high frequencies—all the way to the end of the
+reproduced spectrum—over an angle of 55°. In the vertical direction, the radiator
+remains flat, and so radiation occurs at 90° from the diaphragm up until the height of the
+speaker. Thus, by controlling the radius of curvature in the horizontal plane and the
+vertical height of the diaphragm, speaker manufacturers can control the dispersion pattern
+to fit any area. This method is not so popular today and ESL’s are now rarely produced
+this way. The principle drawback is that this system is not of the ‘push-pull’ type which
+otherwise predominate today; rather, only one electrode is used to ‘push’ while the
+mechanical restoring force of the diaphragm returns it to its original position. In short,
+high frequency content suffers and the maximum level is considerably less than with two
+electrodes because there is less force acting on the diaphragm.
+With the more common flat-panel systems, advantage is taken of the size of the
+radiating surface. A radiator which is large compared to the wavelength of the radiated
+3
+
+The “Quad 989,” for example, has no crossover
+Full-range speakers such as the “Emperor” are able to generate over 120dB of acoustic pressure from
+30Hz—45kHz, and 100dB at ultra-low frequencies of 15-20Hz; they use a crossover, however.
+5
+T = M(f x a x b)2 / 0.146, where T = tension, M = mass of diaphragm, a and b = dimensions of the
+diaphragm, and f = fundamental frequency.
+4
+
+6
+
+sound becomes increasingly directional (such as the membrane in an ESL). Therefore it
+is common to construct ESL’s as described above, with several panels of different sizes.
+Varying the size of each panel enables one to accurately control the directivity of the
+sound. Larger panels will beam high frequency content, while smaller panels will evenly
+distribute it. So, with a clever design using various shapes of panel, it is possible to get
+frequencies to disperse evenly.6
+3.4 Efficiency, Impedance (acoustic, electric)
+In theory, the efficiency of an ESL is very high because there are very few things
+which can weaken the signal power. Of the few things which can, however, is the airload resistance (which represents the useful audio output, anyway). This acoustic
+impedance can vary over the surface, becoming more mechanical in nature as one
+approaches the clamped edges. While the mass of the diaphragm, given its extremely
+thin cross-section, can be neglected, it is a common misconception with ESL’s, that their
+moving mass is extremely small. There is a layer of air directly associated with the
+diaphragm which is estimated to be about five times greater than the actual per-unit mass
+of the diaphragm itself.
+The electrical impedance which ESL’s present to an amplifier varies with
+frequency since these speakers are nothing but large capacitors. As the frequency
+increases, the impedance decreases by 6dB per octave. (I increase, Z or R decreases…,
+P? => P = VI = I2R) …however, demands more current at high f, so P = VI means
+power usage increases at high f.
+Power requirements also increase with the size of the diaphragm. A 35W valve
+amp, or a 50W tube amp are sufficient for a few speakers, with most others requiring
+around 100W.
+3.5 Power Output
+The maximum output of an electrostatic loudspeaker is proportional to the
+maximum strength of the electrostatic field generated between the diaphragm and the
+electrodes. This value is the sum of the polarizing voltage and that of the peak signal
+voltage which is applied to the electrodes. As this total value becomes too large,
+however, the dielectric breakdown of air occurs between the diaphragm and the
+electrodes. To avoid this, manufacturers will set the polarizing voltage plus the
+maximum intended signal voltage to be slightly less than the breakdown of the air itself.
+In terms of the maximum force which can be generated, the following equation is given:
+F = (u2/16!)(1.11 x 10-5) dyn/cm2
+where F is the force per unit area, and u is the maximum electrical field strength (V/cm)
+before the onset of air ionization. In terms of acoustical pressure:
+P = Isig x Vpol/2!crd
+
+6
+
+Some manufacturers, such as “InnerSound,” prefer to have very narrow dispersion; others, such as
+“Quad” and “Martin-Logan” have very wide dispersion.
+
+7
+
+where Isig is signal current sent to the plates (A), Vpol is the polarizing voltage, c is
+velocity of sound, r is the measuring distance (m), and d is the space between the
+diaphragm and the electrode. P is in N/m2.
+The maximum output of most ESL’s is still not as great as the average dynamiccoil design. Luckily, advances in design have greatly increased the maximum possible
+volume level over levels of 40 years ago—maximum levels of 120dB are rare but not
+unheard of.
+4. Advantages over conventional speakers
+Now we come to some of the electrostatic speakers’ many advantages. (This will
+probably read like an advertisement because I’ve been swept up in the propaganda I’ve
+been exposed to while researching these things…) The first and most apparent benefit is
+its reproduction of high frequency content. The response of the lightweight diaphragm is
+in every way superior to the heavy moving coil. Recall that the moving part of a
+magnetic speaker is relatively substantial—its voice coil, suspension system, and cone
+add up to a lot of mass. The total weight of all of these parts is much more than the air
+that the speaker drives, and since music consists mostly of transients, the mass of
+magnetic speakers prevents them from responding quickly enough to follow a rapidly
+changing waveform with perfect precision. We know that the mass of an electrostatic
+loudspeakers’ diaphragm is quite small and can, as a result, respond near-instantaneously
+to the audio signal. This is not to say that transient response is ‘perfect,’ but when
+compared to the moving coil, the difference is readily discernible.
+Another attraction of ESL’s is that the diaphragm can be a full frequency driver.
+This means that no crossover is necessary, or that the crossover frequency is quite low if
+other methods are employed to strengthen the bass. Either way, coloration from phase
+distortion in the higher frequencies is removed.
+The diaphragm in an ESL, for the most part, moves evenly over its entire surface
+(movement varies as we progress from clamped at the edges to more free in the middle),
+whereas the voice coil of a magnetic speaker drives only one point—the apex of the cone.
+Cones are designed to not be perfectly rigid—different parts vibrating at different
+frequencies—so the driven surface flexes and distorts, consequently distorting the sound.
+The advantage which ESL’s have here is that ‘breakup’ is eliminated, removing another
+coloration of the sound which is familiar to ordinary moving-coil systems. Also, because
+the diaphragm moves more equally as a unit, it has virtually zero distortion7, so their
+sound quality remains high, and they produce a unified, coherent wave-front for precise
+holographic-quality imaging.
+Of the many potential pitfalls in the accurate reproduction of an audio signal,
+resonance is something which poses few problems for the ESL. Changing the tension of
+the diaphragm enables manufacturers to control which frequencies the ESL will resonate
+at. Usually this value is set below 100Hz, meaning there are no high frequency
+resonances. A magnetic speaker resonates at many frequencies, behaving somewhat like
+a bell. Also, because the "ringing” continues long after the original note has stopped,
+
+7
+
+Nonlinear distortions are below 0.1 - 0.05%, comparable with the distortions of a good amplifier.
+
+8
+
+transient response is poor. And finally, ESL’s don’t need a cabinet. All those problems
+associated with cabinet design can be circumvented.
+All this, in short, frees the electrostatic loudspeaker from limitations which plague
+conventional systems. Coloration and non-linear distortion which are associated with
+most speaker systems is removed. Indeed, we are so used to hearing the ‘colour’ which
+the moving-coil loudspeaker introduces that we have grown to accept it. Certainly,
+hearing the ‘uncolored’ version will come as a revelation. And while there still exist
+problems with ESL’s, (sure, they’re still expensive and big) they have overcome many
+other limiting factors which have existed since their resurgence of popularity in the late
+1950’s. With further developments in materials, cheaper polymers, and ongoing
+research, these types of speaker are sure to start showing up with more frequency.8
+
+8
+
+Pun intended.
+
+9
+
+Bibliography
+Peter J. Baxandall, “Electrostatic Loudspeakers, “ in Loudspeaker and Headphone
+Handbook, edited by John Borwick, Oxford: Reed Educational and Professional
+Publishing Ltd, pg. 106 – 195 (1998).
+John Eargle, Loudspeaker handbook, New York: Chapman & Hall, pg. 114 – 120 (1997).
+Arthur A. Janszen, “An Electrostatic Loudspeaker Development,” in An Anthology of
+Articles on Loudspeakers from the pages of the Journal of the Audio Engineering
+Society vol.1 – vol.25, pg. 21 – 24 (1955).
+Theodore Lindenberg, “The Isophase Loudspeaker,” in An Anthology of Articles on
+Loudspeakers from the pages of the Journal of the Audio Engineering Society
+vol.1 – vol.25, pg. 25 – 28 (1956).
+H. M. Tremaine, Audio Cyclopedia, Indianapolis: Howard W. Sams & Co., pg 1084 –
+1090 (1969).
+InnerSound,
+“Electrostatic
+mid-range
+http://www.innersound.net/electrostatic.htm
+
+10
+
+tweeter
+
+element”
+
+

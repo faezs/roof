@@ -36,13 +36,6 @@
         "url": "https://files.pythonhosted.org/packages/25/8a/c46dcc25341b5bce5472c718902eb3d38600a903b14fa6aeecef3f21a46f/asttokens-3.0.0-py3-none-any.whl",
         "version": "3.0.0"
       },
-      "black": {
-        "is_direct": false,
-        "sha256": "1e2978f6df243b155ef5fa7e558a43037c3079093ed5d10fd84c43900f2d8ecc",
-        "type": "url",
-        "url": "https://files.pythonhosted.org/packages/13/f3/89aac8a83d73937ccd39bbe8fc6ac8860c11cfa0af5b1c96d081facac844/black-25.1.0-cp312-cp312-macosx_11_0_arm64.whl",
-        "version": "25.1.0"
-      },
       "casadi": {
         "is_direct": false,
         "sha256": "83dbc27125044e7600b04af648f24e6924d46e81afe6ff088218e4b7e9a37f08",
@@ -77,13 +70,6 @@
         "type": "url",
         "url": "https://files.pythonhosted.org/packages/5e/6c/309972937d931069816dc8b28193a650485bc35cca92c04c8c15c4bd181e/chex-0.1.89-py3-none-any.whl",
         "version": "0.1.89"
-      },
-      "click": {
-        "is_direct": false,
-        "sha256": "61a3265b914e850b85317d0b3109c7f8cd35a670f963866005d6ef1d5175a12b",
-        "type": "url",
-        "url": "https://files.pythonhosted.org/packages/85/32/10bb5764d90a8eee674e9dc6f4db6a0ab47c8c4d0d83c27f7c39ac415a4d/click-8.2.1-py3-none-any.whl",
-        "version": "8.2.1"
       },
       "colorlog": {
         "is_direct": false,
@@ -315,6 +301,13 @@
         "type": "url",
         "url": "https://files.pythonhosted.org/packages/dc/89/99805cd801919b4535e023bfe2de651f5a3ec4f5846a867cbc08006db455/jax-0.6.1-py3-none-any.whl",
         "version": "0.6.1"
+      },
+      "jax-metal": {
+        "is_direct": false,
+        "sha256": "f1dbfecb298cdd3ba6da3ad6dc9a2adb63d71741f8b8ece28c296b32d608b6c8",
+        "type": "url",
+        "url": "https://files.pythonhosted.org/packages/09/dc/6d8fbfc29d902251cf333414cf7dcfaf4b252a9920c881354584ed36270d/jax_metal-0.1.1-py3-none-macosx_13_0_arm64.whl",
+        "version": "0.1.1"
       },
       "jaxlib": {
         "is_direct": false,
@@ -1037,6 +1030,13 @@
         "url": "https://files.pythonhosted.org/packages/fd/84/fd2ba7aafacbad3c4201d395674fc6348826569da3c0937e75505ead3528/wcwidth-0.2.13-py2.py3-none-any.whl",
         "version": "0.2.13"
       },
+      "wheel": {
+        "is_direct": false,
+        "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248",
+        "type": "url",
+        "url": "https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl",
+        "version": "0.45.1"
+      },
       "widgetsnbextension": {
         "is_direct": false,
         "sha256": "4875a9eaf72fbf5079dc372a51a9f268fc38d46f767cbf85c43a36da5cb9b575",
@@ -1066,13 +1066,6 @@
         "anytree": [],
         "appnope": [],
         "asttokens": [],
-        "black": [
-          "click",
-          "mypy-extensions",
-          "packaging",
-          "pathspec",
-          "platformdirs"
-        ],
         "casadi": [
           "numpy"
         ],
@@ -1088,7 +1081,6 @@
           "toolz",
           "typing-extensions"
         ],
-        "click": [],
         "colorlog": [],
         "comm": [
           "traitlets"
@@ -1203,6 +1195,12 @@
           "numpy",
           "opt-einsum",
           "scipy"
+        ],
+        "jax-metal": [
+          "jax",
+          "jaxlib",
+          "six",
+          "wheel"
         ],
         "jaxlib": [
           "ml-dtypes",
@@ -1546,11 +1544,12 @@
           "platformdirs"
         ],
         "wcwidth": [],
+        "wheel": [],
         "widgetsnbextension": [],
         "xlrd": [],
         "zipp": []
       }
     }
   },
-  "invalidationHash": "3ff82e18619bab7fd83d9db1b649b29d537ecdcc2f94f5978d2571976800f42e"
+  "invalidationHash": "8ca3821617e7fdca5de6d794d8aa8cdabf4940a16f4483d410e2db93e4325655"
 }

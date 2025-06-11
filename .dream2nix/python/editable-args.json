@@ -1,0 +1,11 @@
+{
+  "editables": {
+    "artist": "."
+  },
+  "findRoot": "/nix/store/3gxg6k6larcqsf6db60c897iayrkak45-find-root.py",
+  "pyEnv": "/nix/store/a2b8mawj315ji1k4mjyg2dvlsglp9xqy-python3-3.12.10-env",
+  "rootName": "artist",
+  "sitePackages": "lib/python3.12/site-packages",
+  "storeDir": "/nix/store",
+  "unzip": "/nix/store/0zsbcfy6ddrmx04d45491mfx82hv6kxs-unzip-6.0"
+}

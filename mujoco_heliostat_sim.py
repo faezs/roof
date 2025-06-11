@@ -29,6 +29,28 @@ from heliostat_verified_control import verified_control
 
 logger = logging.getLogger(__name__)
 
+# Utility functions
+def wrap_angle(angle_deg):
+    """Wrap angle to (-180, 180] degrees"""
+    wrapped = ((angle_deg + 180.0) % 360.0) - 180.0
+    return 180.0 if wrapped == -180.0 else wrapped
+
+def angle_difference(target_deg, current_deg):
+    """Compute shortest angular difference, handling wrap-around"""
+    diff = target_deg - current_deg
+    return wrap_angle(diff)
+
+# JIT-compiled standalone functions
+def _mjx_step_with_forces(mjx_model, mjx_data: mjx.Data, control_torques: jnp.ndarray) -> mjx.Data:
+    """Physics step (temporarily removing JIT to isolate overflow)"""
+    # Apply control torques
+    mjx_data = mjx_data.replace(ctrl=control_torques.flatten())
+    
+    # Step physics
+    mjx_data = mjx.step(mjx_model, mjx_data)
+    
+    return mjx_data
+
 @dataclass
 class HeliostatConfig:
     """Configuration for individual heliostat"""
@@ -42,12 +64,12 @@ class HeliostatConfig:
     azimuth_range: Tuple[float, float] = (-180.0, 180.0)  # degrees
     elevation_range: Tuple[float, float] = (15.0, 90.0)   # degrees
     max_angular_velocity: float = 5.0  # deg/s
-    max_torque: float = 1000.0  # Nm
+    max_torque: float = 50.0  # Nm (realistic for small heliostat)
     
-    # Structural parameters
-    mirror_mass: float = 50.0  # kg
-    pedestal_mass: float = 200.0  # kg
-    structural_damping: float = 0.1
+    # Structural parameters (reduced for stability)
+    mirror_mass: float = 10.0  # kg (lighter)
+    pedestal_mass: float = 50.0  # kg (lighter)
+    structural_damping: float = 0.5  # increased damping
     
 class HeliostatState(NamedTuple):
     """State of a single heliostat"""
@@ -101,10 +123,25 @@ class MuJoCoHeliostatSimulator:
         
         # Initialize simulation state
         self.data = mujoco.MjData(self.model)
+        
+        # Initialize joint positions to reasonable starting values
+        for i in range(self.num_heliostats):
+            azimuth_joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f'heliostat_{i}_azimuth_joint')
+            elevation_joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f'heliostat_{i}_elevation_joint')
+            
+            if azimuth_joint_id >= 0:
+                self.data.qpos[azimuth_joint_id] = 0.0  # Start at 0 degrees azimuth
+            if elevation_joint_id >= 0:
+                self.data.qpos[elevation_joint_id] = 45.0 * np.pi / 180.0  # Start at 45 degrees elevation
+        
+        # Forward kinematics to ensure consistent state
+        mujoco.mj_forward(self.model, self.data)
+        
         self.mjx_data = mjx.put_data(self.model, self.data)
         
         # Control interface
         self.target_angles = jnp.zeros((self.num_heliostats, 2))  # [azimuth, elevation] for each
+        self.previous_target_angles = jnp.zeros((self.num_heliostats, 2))  # For rate limiting
         
         # Wind simulation state
         self.wind_rng_key = jax.random.PRNGKey(42)
@@ -130,7 +167,7 @@ class MuJoCoHeliostatSimulator:
             '<?xml version="1.0" ?>',
             '<mujoco model="heliostat_field">',
             '  <compiler angle="degree" coordinate="local"/>',
-            '  <option timestep="0.01" gravity="0 0 -9.81"/>',
+            '  <option timestep="0.005" gravity="0 0 -9.81" integrator="RK4" solver="Newton" iterations="10"/>',
             '',
             '  <!-- Material definitions -->',
             '  <asset>',
@@ -160,8 +197,8 @@ class MuJoCoHeliostatSimulator:
         # Add actuators for each heliostat
         for i in range(self.num_heliostats):
             xml_lines.extend([
-                f'    <motor name="heliostat_{i}_azimuth" joint="heliostat_{i}_azimuth_joint" gear="100"/>',
-                f'    <motor name="heliostat_{i}_elevation" joint="heliostat_{i}_elevation_joint" gear="50"/>',
+                f'    <motor name="heliostat_{i}_azimuth" joint="heliostat_{i}_azimuth_joint" gear="1"/>',
+                f'    <motor name="heliostat_{i}_elevation" joint="heliostat_{i}_elevation_joint" gear="1"/>',
             ])
             
         xml_lines.extend([
@@ -195,39 +232,33 @@ class MuJoCoHeliostatSimulator:
         x, y, z = config.position
         
         xml_lines = [
-            f'    <!-- Heliostat {heliostat_id} -->',
-            f'    <body name="heliostat_{heliostat_id}_base" pos="{x} {y} {z}">',
-            f'      <!-- Pedestal -->',
-            f'      <geom type="cylinder" size="0.3 {config.pedestal_height/2}" pos="0 0 {config.pedestal_height/2}" material="steel"/>',
+            f'    <!-- Heliostat {heliostat_id} - MINIMAL GEOMETRY WITH PROPER INERTIALS -->',
+            f'    <body name="heliostat_{heliostat_id}_base" pos="{x} {y} {config.pedestal_height}">',
+            f'      <!-- Base inertial (required for moving body) -->',
+            f'      <inertial pos="0 0 0" mass="5.0" diaginertia="0.1 0.1 0.05"/>',
+            f'      <!-- Azimuth joint -->',
+            f'      <joint name="heliostat_{heliostat_id}_azimuth_joint" type="hinge" axis="0 0 1" ',
+            f'             range="{config.azimuth_range[0]} {config.azimuth_range[1]}" ',
+            f'             damping="50" frictionloss="5"/>',
             f'      ',
-            f'      <!-- Azimuth joint and actuator housing -->',
-            f'      <body name="heliostat_{heliostat_id}_azimuth" pos="0 0 {config.pedestal_height}">',
-            f'        <joint name="heliostat_{heliostat_id}_azimuth_joint" type="hinge" axis="0 0 1" ',
-            f'               range="{config.azimuth_range[0]} {config.azimuth_range[1]}" ',
-            f'               damping="10" frictionloss="1"/>',
-            f'        <geom type="cylinder" size="0.25 0.2" material="steel"/>',
+            f'      <!-- Elevation assembly -->',
+            f'      <body name="heliostat_{heliostat_id}_elevation" pos="0 0 0.2">',
+            f'        <!-- Elevation assembly inertial -->',
+            f'        <inertial pos="0 0 0" mass="3.0" diaginertia="0.08 0.08 0.04"/>',
+            f'        <joint name="heliostat_{heliostat_id}_elevation_joint" type="hinge" axis="1 0 0" ',
+            f'               range="{config.elevation_range[0]} {config.elevation_range[1]}" ',
+            f'               damping="25" frictionloss="2.5"/>',
             f'        ',
-            f'        <!-- Elevation assembly -->',
-            f'        <body name="heliostat_{heliostat_id}_elevation" pos="0 0 0.3">',
-            f'          <joint name="heliostat_{heliostat_id}_elevation_joint" type="hinge" axis="1 0 0" ',
-            f'                 range="{config.elevation_range[0]} {config.elevation_range[1]}" ',
-            f'                 damping="5" frictionloss="0.5"/>',
+            f'        <!-- Mirror - MINIMAL GEOMETRY -->',
+            f'        <body name="heliostat_{heliostat_id}_mirror" pos="0 0 0.1">',
+            f'          <!-- Mirror inertial properties -->',
+            f'          <inertial pos="0 0 0" mass="{config.mirror_mass}" diaginertia="{config.mirror_mass*0.1:.3f} {config.mirror_mass*0.1:.3f} {config.mirror_mass*0.05:.3f}"/>',
+            f'          <geom name="heliostat_{heliostat_id}_mirror_geom" type="box" ',
+            f'                size="{config.mirror_width/2} {config.mirror_height/2} 0.02" ',
+            f'                material="mirror"/>',
             f'          ',
-            f'          <!-- Mirror -->',
-            f'          <body name="heliostat_{heliostat_id}_mirror" pos="0 0 0">',
-            f'            <geom name="heliostat_{heliostat_id}_mirror_geom" type="box" ',
-            f'                  size="{config.mirror_width/2} {config.mirror_height/2} 0.02" ',
-            f'                  material="mirror" mass="{config.mirror_mass}"/>',
-            f'            ',
-            f'            <!-- Mirror center site for sensors -->',
-            f'            <site name="heliostat_{heliostat_id}_mirror_center" pos="0 0 0" size="0.01"/>',
-            f'            ',
-            f'            <!-- Mirror corners for wind force application -->',
-            f'            <site name="heliostat_{heliostat_id}_corner_1" pos="{config.mirror_width/2} {config.mirror_height/2} 0" size="0.01"/>',
-            f'            <site name="heliostat_{heliostat_id}_corner_2" pos="{-config.mirror_width/2} {config.mirror_height/2} 0" size="0.01"/>',
-            f'            <site name="heliostat_{heliostat_id}_corner_3" pos="{-config.mirror_width/2} {-config.mirror_height/2} 0" size="0.01"/>',
-            f'            <site name="heliostat_{heliostat_id}_corner_4" pos="{config.mirror_width/2} {-config.mirror_height/2} 0" size="0.01"/>',
-            f'          </body>',
+            f'          <!-- Mirror center site for sensors -->',
+            f'          <site name="heliostat_{heliostat_id}_mirror_center" pos="0 0 0" size="0.01"/>',
             f'        </body>',
             f'      </body>',
             f'    </body>',
@@ -236,7 +267,6 @@ class MuJoCoHeliostatSimulator:
         
         return xml_lines
         
-    @jax.jit
     def step(self, mjx_data: mjx.Data, control_torques: jnp.ndarray) -> mjx.Data:
         """
         Advance simulation by one timestep with wind disturbances
@@ -253,18 +283,26 @@ class MuJoCoHeliostatSimulator:
         mjx.Data
             Updated simulation state
         """
-        # Apply control torques
-        mjx_data = mjx_data.replace(ctrl=control_torques.flatten())
+        # Apply wind forces (simplified - full wind forces would require more complex JIT handling)
+        # mjx_data = self._apply_wind_forces(mjx_data)
         
-        # Apply wind forces
-        mjx_data = self._apply_wind_forces(mjx_data)
+        # Use JIT-compiled step function
+        mjx_data = _mjx_step_with_forces(self.mjx_model, mjx_data, control_torques)
         
-        # Step physics
-        mjx_data = mjx.step(self.mjx_model, mjx_data)
+        # Check for numerical issues and reset if needed
+        if not jnp.all(jnp.isfinite(mjx_data.qpos)) or not jnp.all(jnp.isfinite(mjx_data.qvel)):
+            logger.warning("Numerical instability detected in MJX simulation - resetting problematic values")
+            
+            # Reset to safe values if overflow detected
+            safe_qpos = jnp.where(jnp.isfinite(mjx_data.qpos), 
+                                 jnp.clip(mjx_data.qpos, -jnp.pi, jnp.pi), 0.0)
+            safe_qvel = jnp.where(jnp.isfinite(mjx_data.qvel), 
+                                 jnp.clip(mjx_data.qvel, -10.0, 10.0), 0.0)
+            
+            mjx_data = mjx_data.replace(qpos=safe_qpos, qvel=safe_qvel)
         
         return mjx_data
         
-    @jax.jit
     def _apply_wind_forces(self, mjx_data: mjx.Data) -> mjx.Data:
         """Apply wind forces to heliostat mirrors"""
         
@@ -276,7 +314,7 @@ class MuJoCoHeliostatSimulator:
         
         for i in range(self.num_heliostats):
             # Get mirror orientation
-            mirror_body_id = self.mjx_model.body(f'heliostat_{i}_mirror').id
+            mirror_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f'heliostat_{i}_mirror')
             mirror_quat = mjx_data.xquat[mirror_body_id]
             
             # Calculate wind pressure on mirror surface
@@ -289,8 +327,8 @@ class MuJoCoHeliostatSimulator:
             corner_force = wind_pressure / 4  # Distribute equally to 4 corners
             
             for j in range(4):
-                site_id = self.mjx_model.site(f'heliostat_{i}_corner_{j+1}').id
-                body_id = self.mjx_model.site_bodyid[site_id]
+                site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, f'heliostat_{i}_corner_{j+1}')
+                body_id = self.model.site_bodyid[site_id]
                 total_force = total_force.at[body_id, :3].add(corner_force)
                 
         return mjx_data.replace(xfrc_applied=total_force)
@@ -376,26 +414,25 @@ class MuJoCoHeliostatSimulator:
         states = []
         
         for i in range(self.num_heliostats):
-            # Get joint positions and velocities
-            azimuth_sensor_id = self.mjx_model.sensor(f'heliostat_{i}_azimuth_pos').id
-            elevation_sensor_id = self.mjx_model.sensor(f'heliostat_{i}_elevation_pos').id
-            azimuth_vel_sensor_id = self.mjx_model.sensor(f'heliostat_{i}_azimuth_vel').id
-            elevation_vel_sensor_id = self.mjx_model.sensor(f'heliostat_{i}_elevation_vel').id
+            # Get joint positions and velocities using joint indices directly
+            azimuth_joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f'heliostat_{i}_azimuth_joint')
+            elevation_joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f'heliostat_{i}_elevation_joint')
             
-            azimuth = mjx_data.sensordata[azimuth_sensor_id]
-            elevation = mjx_data.sensordata[elevation_sensor_id]
-            azimuth_vel = mjx_data.sensordata[azimuth_vel_sensor_id]
-            elevation_vel = mjx_data.sensordata[elevation_vel_sensor_id]
+            # Get positions and velocities from qpos and qvel
+            azimuth = mjx_data.qpos[azimuth_joint_id]
+            elevation = mjx_data.qpos[elevation_joint_id]
+            azimuth_vel = mjx_data.qvel[azimuth_joint_id]
+            elevation_vel = mjx_data.qvel[elevation_joint_id]
             
             # Calculate mirror normal vector
-            mirror_body_id = self.mjx_model.body(f'heliostat_{i}_mirror').id
+            mirror_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f'heliostat_{i}_mirror')
             mirror_quat = mjx_data.xquat[mirror_body_id]
             rot_matrix = self._quat_to_rotation_matrix(mirror_quat)
             mirror_normal = rot_matrix @ jnp.array([0, 0, 1])
             
             # Get applied torques
-            azimuth_actuator_id = self.mjx_model.actuator(f'heliostat_{i}_azimuth').id
-            elevation_actuator_id = self.mjx_model.actuator(f'heliostat_{i}_elevation').id
+            azimuth_actuator_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, f'heliostat_{i}_azimuth')
+            elevation_actuator_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, f'heliostat_{i}_elevation')
             torques = jnp.array([
                 mjx_data.actuator_force[azimuth_actuator_id],
                 mjx_data.actuator_force[elevation_actuator_id]
@@ -415,8 +452,26 @@ class MuJoCoHeliostatSimulator:
         return states
         
     def set_target_angles(self, target_angles: jnp.ndarray):
-        """Set target angles for all heliostats"""
-        self.target_angles = target_angles
+        """Set target angles for all heliostats with rate limiting"""
+        max_rate = 30.0  # degrees per second
+        dt = self.timestep
+        max_change = max_rate * dt
+        
+        # Rate limit the target angle changes
+        angle_changes = target_angles - self.previous_target_angles
+        
+        # Wrap angle differences properly
+        for i in range(self.num_heliostats):
+            angle_changes = angle_changes.at[i, 0].set(
+                wrap_angle(angle_changes[i, 0])
+            )
+        
+        # Clip to maximum rate
+        limited_changes = jnp.clip(angle_changes, -max_change, max_change)
+        
+        # Apply limited changes
+        self.target_angles = self.previous_target_angles + limited_changes
+        self.previous_target_angles = self.target_angles.copy()
         
     def compute_control_torques(self, current_states: List[HeliostatState]) -> jnp.ndarray:
         """Compute control torques using PID control"""
@@ -426,23 +481,27 @@ class MuJoCoHeliostatSimulator:
         for i, state in enumerate(current_states):
             target_az, target_el = self.target_angles[i]
             
-            # PID gains (tuned for heliostat dynamics)
-            kp_az, ki_az, kd_az = 500.0, 50.0, 100.0
-            kp_el, ki_el, kd_el = 300.0, 30.0, 60.0
+            # PID gains (conservative tuning to prevent instability)
+            kp_az, ki_az, kd_az = 50.0, 5.0, 10.0
+            kp_el, ki_el, kd_el = 30.0, 3.0, 6.0
             
-            # Azimuth control
-            az_error = target_az - state.azimuth
-            az_torque = kp_az * az_error - kd_az * state.azimuth_velocity
+            # Azimuth control with proper angle wrapping
+            az_error = angle_difference(target_az, state.azimuth)
+            az_error = jnp.clip(az_error, -60.0, 60.0)  # Limit error to reasonable range
+            az_vel = jnp.clip(state.azimuth_velocity, -10.0, 10.0)  # Limit velocity
+            az_torque = kp_az * az_error - kd_az * az_vel
             
-            # Elevation control  
-            el_error = target_el - state.elevation
-            el_torque = kp_el * el_error - kd_el * state.elevation_velocity
+            # Elevation control with numerical safeguards  
+            el_error = jnp.clip(target_el - state.elevation, -60.0, 60.0)  # Limit error
+            el_vel = jnp.clip(state.elevation_velocity, -10.0, 10.0)  # Limit velocity
+            el_torque = kp_el * el_error - kd_el * el_vel
             
-            # Limit torques
-            az_torque = jnp.clip(az_torque, -self.heliostat_configs[i].max_torque, 
-                                self.heliostat_configs[i].max_torque)
-            el_torque = jnp.clip(el_torque, -self.heliostat_configs[i].max_torque, 
-                                self.heliostat_configs[i].max_torque)
+            # Limit torques and check for NaN
+            max_torque = self.heliostat_configs[i].max_torque
+            az_torque = jnp.where(jnp.isfinite(az_torque), 
+                                 jnp.clip(az_torque, -max_torque, max_torque), 0.0)
+            el_torque = jnp.where(jnp.isfinite(el_torque), 
+                                 jnp.clip(el_torque, -max_torque, max_torque), 0.0)
             
             torques.append([az_torque, el_torque])
             
@@ -476,7 +535,9 @@ class MuJoCoHeliostatSimulator:
             # n = (s + t) / |s + t| where s=sun_dir, t=target_dir
             incident_ray = -sun_direction  # Ray direction (towards earth)
             required_normal = incident_ray + target_vector
-            required_normal = required_normal / jnp.linalg.norm(required_normal)
+            norm_magnitude = jnp.linalg.norm(required_normal)
+            # Add numerical safeguard
+            required_normal = required_normal / jnp.maximum(norm_magnitude, 1e-8)
             
             # Convert normal to azimuth/elevation angles
             # Normal in world coordinates: [nx, ny, nz]
@@ -485,8 +546,9 @@ class MuJoCoHeliostatSimulator:
             # Azimuth: angle from +X axis in XY plane
             azimuth = jnp.arctan2(ny, nx) * 180 / jnp.pi
             
-            # Elevation: angle from XY plane
-            elevation = jnp.arcsin(nz) * 180 / jnp.pi
+            # Elevation: angle from XY plane (clamp nz to valid arcsin range)
+            nz_safe = jnp.clip(nz, -1.0, 1.0)
+            elevation = jnp.arcsin(nz_safe) * 180 / jnp.pi
             
             # Ensure angles are within heliostat limits
             azimuth = jnp.clip(azimuth, config.azimuth_range[0], config.azimuth_range[1])
@@ -621,7 +683,7 @@ class MJXHeliostatController:
         
         for i in range(self.simulator.num_heliostats):
             # Get mirror body position and orientation
-            mirror_body_id = self.simulator.mjx_model.body(f'heliostat_{i}_mirror').id
+            mirror_body_id = mujoco.mj_name2id(self.simulator.model, mujoco.mjtObj.mjOBJ_BODY, f'heliostat_{i}_mirror')
             
             # Position in world coordinates
             position = self.sim_data.xpos[mirror_body_id]

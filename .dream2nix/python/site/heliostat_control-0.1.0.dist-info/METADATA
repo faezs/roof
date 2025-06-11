@@ -1,0 +1,54 @@
+Metadata-Version: 2.4
+Name: heliostat-control
+Version: 0.1.0
+Summary: Physics-based heliostat control system with MuJoCo-MJX, ARTIST raytracing, and SBV verification
+Author-email: Heliostat Team <team@heliostat.dev>
+License: Welp this is a license
+License-File: LICENSE
+Requires-Python: >=3.9
+Requires-Dist: aio-mqtt
+Requires-Dist: chex>=0.1.8
+Requires-Dist: colorlog>=6.7.0
+Requires-Dist: dm-haiku>=0.0.10
+Requires-Dist: flax>=0.7.0
+Requires-Dist: h5py>=3.8.0
+Requires-Dist: ipython>=8.0.0
+Requires-Dist: jax-metal>=0.0.4
+Requires-Dist: jax>=0.4.0
+Requires-Dist: kornia>=0.7.0
+Requires-Dist: matplotlib>=3.6.0
+Requires-Dist: mujoco-mjx>=3.0.0
+Requires-Dist: mujoco>=3.0.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: opencv-python>=4.8.0
+Requires-Dist: optax>=0.1.7
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: psutil>=5.9.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: pyzmq>=25.0.0
+Requires-Dist: rayoptics
+Requires-Dist: requests>=2.31.0
+Requires-Dist: scikit-image>=0.21.0
+Requires-Dist: scikit-learn>=1.3.0
+Requires-Dist: scipy>=1.10.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchvision>=0.15.0
+Requires-Dist: tqdm>=4.65.0
+Requires-Dist: typing-extensions>=4.7.0
+Requires-Dist: ultralytics>=8.0.0
+Provides-Extra: dev
+Requires-Dist: mypy>=1.5.0; extra == 'dev'
+Requires-Dist: pre-commit>=3.3.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.21.0; extra == 'dev'
+Requires-Dist: pytest-cov>=4.1.0; extra == 'dev'
+Requires-Dist: pytest>=7.4.0; extra == 'dev'
+Requires-Dist: ruff>=0.0.280; extra == 'dev'
+Provides-Extra: raspberry-pi
+Requires-Dist: picamera2>=0.3.12; extra == 'raspberry-pi'
+Requires-Dist: pylepton>=0.1.0; extra == 'raspberry-pi'
+Requires-Dist: rpi-gpio>=0.7.1; extra == 'raspberry-pi'
+Provides-Extra: simulation
+Requires-Dist: casadi>=3.6.0; extra == 'simulation'
+Requires-Dist: control>=0.9.4; extra == 'simulation'
+Requires-Dist: sympy>=1.12; extra == 'simulation'

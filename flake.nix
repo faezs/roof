@@ -154,6 +154,7 @@
             vehicle.packages.${system}.default
             haskellEnv
             artistPackage  # ARTIST package
+	    pkgs.git
             pkgs.uv
             pkgs.z3  # SMT solver for SBV
             
@@ -161,9 +162,9 @@
             pkgs.ffmpeg     # Video encoding for camera streams
             
             # Development tools
-            pkgs.ruff       # Python linter
-            pkgs.black      # Python formatter
-            pkgs.mypy       # Type checker
+            # pkgs.ruff       # Python linter
+            # pkgs.black      # Python formatter
+            # pkgs.mypy       # Type checker
           ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ 
             soltrace
             pkgs.cvc4  # Alternative SMT solver
@@ -178,6 +179,10 @@
             ${lib.optionalString (!pkgs.stdenv.isDarwin) ''
               export PYTHONPATH=$PYTHONPATH:${soltrace}/lib
               export PATH=$PATH:${soltrace}/bin
+            ''}
+            ${lib.optionalString pkgs.stdenv.isDarwin ''
+              # JAX will auto-detect Metal backend
+              # export JAX_PLATFORM_NAME=METAL
             ''}
             
             echo "Heliostat development environment ready"

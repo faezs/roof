@@ -4,7 +4,8 @@
 tmp/
 *.png
 *.pdf
-
+.coverage
+.dream2nix/
 
 dist
 dist-*

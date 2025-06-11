@@ -26,6 +26,45 @@ from mujoco_heliostat_sim import MuJoCoHeliostatSimulator, HeliostatState, Helio
 
 logger = logging.getLogger(__name__)
 
+# JIT-compiled standalone functions
+@jax.jit
+def _mpc_cost_function(torque_sequence: jnp.ndarray, 
+                      current_positions: jnp.ndarray,
+                      current_velocities: jnp.ndarray,
+                      target_trajectory: jnp.ndarray,
+                      wind_forecast: jnp.ndarray,
+                      mpc_params_tuple: tuple) -> float:
+    """JIT-compiled MPC cost function"""
+    horizon, dt, Q_tracking, Q_velocity, R_torque = mpc_params_tuple
+    
+    total_cost = 0.0
+    positions = current_positions
+    velocities = current_velocities
+    
+    for t in range(horizon):
+        # Simplified dynamics prediction
+        inertia = 500.0
+        damping = 50.0
+        wind_speed = jnp.linalg.norm(wind_forecast[t])
+        wind_torque_scale = 0.1 * wind_speed**2
+        wind_torques = jnp.ones_like(torque_sequence[t]) * wind_torque_scale
+        
+        net_torques = torque_sequence[t] - damping * velocities - wind_torques
+        accelerations = net_torques / inertia
+        
+        velocities = velocities + accelerations * dt
+        positions = positions + velocities * dt
+        
+        # Cost terms
+        position_error = positions - target_trajectory[t]
+        tracking_cost = Q_tracking * jnp.sum(position_error**2)
+        velocity_cost = Q_velocity * jnp.sum(velocities**2)
+        torque_cost = R_torque * jnp.sum(torque_sequence[t]**2)
+        
+        total_cost += tracking_cost + velocity_cost + torque_cost
+        
+    return total_cost
+
 class MPCParams(NamedTuple):
     """Model Predictive Control parameters"""
     horizon: int = 20  # prediction horizon steps
@@ -45,7 +84,8 @@ class TrajectoryState(NamedTuple):
 class AdaptiveController(nn.Module):
     """Neural network for adaptive heliostat control"""
     
-    hidden_dims: List[int] = [64, 64, 32]
+    def setup(self):
+        self.hidden_dims = [64, 64, 32]
     
     @nn.compact
     def __call__(self, state_features: jnp.ndarray) -> jnp.ndarray:
@@ -119,7 +159,6 @@ class MJXAutodiffController:
         
         logger.info("Initialized MJX autodiff controller")
         
-    @jax.jit
     def mpc_step(self, 
                  current_state: TrajectoryState,
                  target_trajectory: jnp.ndarray,
@@ -142,43 +181,28 @@ class MJXAutodiffController:
             Optimal control torques [n_heliostats, 2]
         """
         
-        # Define cost function for trajectory optimization
-        def trajectory_cost(torque_sequence: jnp.ndarray) -> float:
-            """Cost function for MPC optimization"""
-            
-            total_cost = 0.0
-            state = current_state
-            
-            for t in range(self.mpc_params.horizon):
-                # Predict next state using simplified dynamics
-                next_state = self._predict_next_state(
-                    state, torque_sequence[t], wind_forecast[t]
-                )
-                
-                # Tracking error cost
-                position_error = next_state.positions[0] - target_trajectory[t]
-                tracking_cost = self.Q_track * jnp.sum(position_error**2)
-                
-                # Velocity smoothness cost
-                velocity_cost = self.Q_vel * jnp.sum(next_state.velocities[0]**2)
-                
-                # Control effort cost
-                torque_cost = self.R_torque * jnp.sum(torque_sequence[t]**2)
-                
-                total_cost += tracking_cost + velocity_cost + torque_cost
-                
-                state = next_state
-                
-            return total_cost
+        # Use JIT-compiled cost function
+        mpc_params_tuple = (
+            self.mpc_params.horizon,
+            self.mpc_params.dt,
+            self.Q_track,
+            self.Q_vel,
+            self.R_torque
+        )
             
         # Initialize control sequence
         init_torques = jnp.zeros((self.mpc_params.horizon, self.num_heliostats, 2))
         
-        # Optimize using gradient descent
+        # Optimize using gradient descent with JIT-compiled function
         torque_sequence = init_torques
+        current_positions = current_state.positions[0]
+        current_velocities = current_state.velocities[0]
         
         for _ in range(self.mpc_params.max_iterations):
-            cost_grad = grad(trajectory_cost)(torque_sequence)
+            cost_grad = grad(_mpc_cost_function)(
+                torque_sequence, current_positions, current_velocities,
+                target_trajectory, wind_forecast, mpc_params_tuple
+            )
             torque_sequence = torque_sequence - self.mpc_params.learning_rate * cost_grad
             
             # Apply torque limits
@@ -375,7 +399,6 @@ class MJXAutodiffController:
                 
         return self.train_state
         
-    @jax.jit
     def safety_filter(self, 
                      proposed_torques: jnp.ndarray,
                      current_states: List[HeliostatState],
